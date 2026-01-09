@@ -31,6 +31,9 @@ with st.sidebar:
 
 st.divider()
 
+st.subheader("Navegação rápida")
+st.page_link("pages/create-graph.py", label="📈 Ir para o Criador de Gráfico (2 parâmetros)")
+
 file_in_state = get_uploaded_file()
 
 if file_in_state is None:
@@ -46,5 +49,4 @@ else:
     )
 
     df = pd.read_excel(file_in_state)
-
-    st.dataframe(df)
+    st.session_state["df"] = df
