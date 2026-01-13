@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from core.state import init_session_state, set_uploaded_file, get_uploaded_file
 from services.dataset_service import build_dataset_from_excel
+import numpy as np
 
 st.set_page_config(
     page_title="Dashboard de Amostras",
@@ -54,3 +55,8 @@ else:
             "tipo": file_in_state.type,
         }
     )
+
+    # st.dataframe(st.session_state['df'])
+    df = st.session_state["df"]
+
+    st.dataframe(df)
