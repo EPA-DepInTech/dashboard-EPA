@@ -69,7 +69,21 @@ def dual_axis_chart(
                     secondary_y=True,
                 )
 
-        fig.update_layout(barmode="group", xaxis_title=x_col, legend_title_text="Parâmetros")
+        fig.update_layout(
+            barmode="group",
+            xaxis_title=x_col,
+            legend_title_text="Parâmetros",
+            legend=dict(
+                x=1.02,
+                y=1,
+                xanchor="left",
+                yanchor="top",
+                bordercolor="rgba(0, 0, 0, 0.2)",
+                borderwidth=1,
+            ),
+            margin=dict(r=250),
+            hovermode="x unified"
+        )
         fig.update_yaxes(title_text=" / ".join(y_left) if y_left else "—", secondary_y=False)
         fig.update_yaxes(title_text=" / ".join(y_right) if y_right else "—", secondary_y=True)
         return fig
@@ -101,7 +115,20 @@ def dual_axis_chart(
     else:
         add_traces(d, None)
 
-    fig.update_layout(xaxis_title=x_col, legend_title_text="Parâmetros")
+    fig.update_layout(
+        xaxis_title=x_col,
+        legend_title_text="Parâmetros",
+        legend=dict(
+            x=1.02,
+            y=1,
+            xanchor="left",
+            yanchor="top",
+            bordercolor="rgba(0, 0, 0, 0.2)",
+            borderwidth=1,
+        ),
+        margin=dict(r=250),  # Espaço para legenda à direita
+        hovermode="x unified"
+    )
     fig.update_yaxes(title_text=" / ".join(y_left) if y_left else "—", secondary_y=False)
     fig.update_yaxes(title_text=" / ".join(y_right) if y_right else "—", secondary_y=True)
     return fig

@@ -1,120 +1,231 @@
-# pages/4_Criar_Grafico.py
+# pages/create_graph.py
 import streamlit as st
 import pandas as pd
-import numpy as np
 from pandas.api.types import is_numeric_dtype
 
 from charts.builder import dual_axis_chart
+from services.dataset_service import format_datetime_columns_for_display, remove_accumulated_rows
 
 
-def demo_df() -> pd.DataFrame:
-    # Dados hardcoded (demo) para testar o construtor de gráfico
-    ts = pd.date_range(end=pd.Timestamp.now().floor("H"), periods=72, freq="H")
-    pocos = ["Poço A", "Poço B", "Poço C"]
-
-    rows = []
-    rng = np.random.default_rng(7)
-
-    for poco in pocos:
-        bias = {"Poço A": 0.0, "Poço B": 0.2, "Poço C": -0.15}[poco]
-        for t in ts:
-            rows.append(
-                {
-                    "timestamp": t,
-                    "poco": poco,
-                    "ph": 6.8 + bias + 0.15 * np.sin(t.hour / 24 * 2 * np.pi) + rng.normal(0, 0.05),
-                    "condutividade": 250 + (20 if poco == "Poço B" else 0) + rng.normal(0, 8),
-                    "turbidez": 1.2 + (0.4 if poco == "Poço C" else 0) + abs(rng.normal(0, 0.25)),
-                }
-            )
-
-    df = pd.DataFrame(rows)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return df
+def guess_first_existing(cols: list[str], candidates: list[str]) -> str | None:
+    lower_map = {c.lower(): c for c in cols}
+    for cand in candidates:
+        if cand.lower() in lower_map:
+            return lower_map[cand.lower()]
+    return None
 
 
-st.title("Criar gráfico (X temporal ou por poço, Y múltiplo)")
+st.title("📈 Criar Gráfico")
 
-# Por enquanto vamos usar df hardcoded para você testar o builder
-# Depois substituímos por st.session_state["df"] quando o Excel estiver definido.
-df = demo_df()
+# ✅ Carregar dataset real
+df_dict = st.session_state.get("df_dict")
 
-st.caption(f"Dataset de demonstração | Linhas: {len(df)} | Colunas: {len(df.columns)}")
-with st.expander("Prévia dos dados"):
-    st.dataframe(df.head(40), use_container_width=True)
-
-# X hardcoded
-x_mode = st.selectbox("Eixo X", ["Temporal", "Por poço"])
-
-# Define coluna X e filtros auxiliares
-if x_mode == "Temporal":
-    x_col = "timestamp"
-    all_pocos = sorted(df["poco"].unique())
-    sel_pocos = st.multiselect("Poços", all_pocos, default=all_pocos)
-
-    # Filtro por período (simples)
-    min_dt, max_dt = df["timestamp"].min(), df["timestamp"].max()
-    dt_range = st.slider(
-        "Período",
-        min_value=min_dt.to_pydatetime(),
-        max_value=max_dt.to_pydatetime(),
-        value=(min_dt.to_pydatetime(), max_dt.to_pydatetime()),
-    )
-
-    dff = df[(df["poco"].isin(sel_pocos)) & (df["timestamp"].between(dt_range[0], dt_range[1]))].copy()
-
-    allowed_chart_types = ["Auto", "Linha", "Dispersão"]  # temporal
-else:
-    x_col = "poco"
-    # opcional: filtro temporal mesmo no modo "por poço"
-    min_dt, max_dt = df["timestamp"].min(), df["timestamp"].max()
-    dt_range = st.slider(
-        "Considerar dados no período (para agregação por poço)",
-        min_value=min_dt.to_pydatetime(),
-        max_value=max_dt.to_pydatetime(),
-        value=(min_dt.to_pydatetime(), max_dt.to_pydatetime()),
-    )
-
-    dff = df[df["timestamp"].between(dt_range[0], dt_range[1])].copy()
-
-    allowed_chart_types = ["Auto", "Barra", "Box"]  # categórico
-
-
-# Y múltiplo
-numeric_cols = [c for c in dff.columns if is_numeric_dtype(dff[c]) and c not in ("timestamp",)]
-default_y = [c for c in ["ph", "condutividade"] if c in numeric_cols] or numeric_cols[:2]
-
-y_cols = st.multiselect(
-    "Parâmetros (selecione 1 ou mais)",
-    options=numeric_cols,
-    default=default_y,
-)
-
-if not y_cols:
-    st.info("Selecione pelo menos um parâmetro para gerar o gráfico.")
+if not df_dict or not isinstance(df_dict, dict) or len(df_dict) == 0:
+    st.error("❌ Nenhum Excel carregado. Importe um arquivo na página inicial.")
     st.stop()
 
-st.markdown("### Escalas do eixo Y (duas escalas)")
-st.caption("Coloque no Y1 (esquerdo) as séries de mesma ordem de grandeza; o restante vai pro Y2 (direito).")
+table_name = st.selectbox("Tabela:", list(df_dict.keys()))
+df = df_dict[table_name].copy()
 
-# Escolha do eixo esquerdo; o direito vira o complemento
-default_left = y_cols[:1]  # por padrão, o primeiro vai pro Y1
-y_left = st.multiselect(
-    "Eixo Y1 (esquerdo)",
-    options=y_cols,
-    default=default_left,
-    key="y_left_select",
-)
+# ✅ Mapear colunas (timestamp e poço)
+cols = list(df.columns)
 
-y_right = [c for c in y_cols if c not in y_left]
+default_time = guess_first_existing(cols, ["timestamp", "data", "Data", "DATA", "date", "Date"])
+default_poco = guess_first_existing(cols, ["poco", "Poço", "poço", "ponto", "Ponto", "well", "Well"])
 
-chart_type = st.selectbox("Tipo de gráfico", options=allowed_chart_types, index=0)
+if not default_time:
+    st.warning("Não encontrei uma coluna de data/hora automaticamente. Selecione manualmente abaixo.")
+
+if not default_poco:
+    st.warning("Não encontrei uma coluna de poço/ponto automaticamente. Selecione manualmente abaixo.")
+
+with st.expander("⚙️ Colunas"):
+    time_col = st.selectbox("Data/Hora:", options=cols, index=cols.index(default_time) if default_time in cols else 0)
+    group_col_base = st.selectbox("Poço/Ponto:", options=cols, index=cols.index(default_poco) if default_poco in cols else 0)
+
+# tenta converter a coluna de tempo (sem quebrar)
+try:
+    df[time_col] = pd.to_datetime(df[time_col], errors="coerce", dayfirst=True)
+except Exception:
+    pass
+
+st.divider()
+
+# X mode
+x_mode = st.selectbox("Eixo X", ["Temporal", "Por poço"])
+
+if x_mode == "Temporal":
+    x_col = time_col
+
+    # se a coluna de grupo não existir, cria uma dummy
+    if group_col_base not in df.columns:
+        df["poco"] = "Série"
+        group_col = "poco"
+    else:
+        group_col = group_col_base
+
+    # filtros de poço
+    all_groups = sorted(df[group_col].dropna().astype(str).unique())
+    if all_groups:
+        sel_groups = st.multiselect("Poços:", all_groups, default=all_groups)
+    else:
+        sel_groups = []
+
+    # filtro período
+    valid_dt = df[df[x_col].notna()]
+    if len(valid_dt) == 0:
+        st.error("A coluna de tempo está vazia/ inválida. Verifique o mapeamento.")
+        st.stop()
+
+    min_dt, max_dt = valid_dt[x_col].min(), valid_dt[x_col].max()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "Data inicial:",
+            value=min_dt.date(),
+            min_value=min_dt.date(),
+            max_value=max_dt.date(),
+            key="start_date_temporal"
+        )
+    with col2:
+        end_date = st.date_input(
+            "Data final:",
+            value=max_dt.date(),
+            min_value=min_dt.date(),
+            max_value=max_dt.date(),
+            key="end_date_temporal"
+        )
+    
+    # Converter datas para datetime com hora
+    dt_range = (
+        pd.Timestamp(start_date).to_pydatetime(),
+        pd.Timestamp(end_date).replace(hour=23, minute=59, second=59).to_pydatetime()
+    )
+    
+    if start_date > end_date:
+        st.error("❌ Data inicial não pode ser maior que data final!")
+        st.stop()
+
+    dff = df[df[x_col].between(dt_range[0], dt_range[1])].copy()
+    if sel_groups:
+        dff = dff[dff[group_col].astype(str).isin(sel_groups)].copy()
+
+    allowed_chart_types = ["Auto", "Linha", "Dispersão"]
+else:
+    x_col = group_col_base if group_col_base in df.columns else None
+    if not x_col:
+        st.error("Para 'Por poço', você precisa mapear uma coluna categórica (poço/ponto).")
+        st.stop()
+
+    valid_dt = df[df[time_col].notna()]
+    if len(valid_dt) > 0:
+        min_dt, max_dt = valid_dt[time_col].min(), valid_dt[time_col].max()
+        
+        st.markdown("### 📅 Período (para agregação)")
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Data inicial:",
+                value=min_dt.date(),
+                min_value=min_dt.date(),
+                max_value=max_dt.date(),
+                key="start_date_poço"
+            )
+        with col2:
+            end_date = st.date_input(
+                "Data final:",
+                value=max_dt.date(),
+                min_value=min_dt.date(),
+                max_value=max_dt.date(),
+                key="end_date_poço"
+            )
+        
+        # Converter datas para datetime com hora
+        dt_range = (
+            pd.Timestamp(start_date).to_pydatetime(),
+            pd.Timestamp(end_date).replace(hour=23, minute=59, second=59).to_pydatetime()
+        )
+        
+        if start_date > end_date:
+            st.error("❌ Data inicial não pode ser maior que data final!")
+            st.stop()
+        
+        dff = df[df[time_col].between(dt_range[0], dt_range[1])].copy()
+    else:
+        dff = df.copy()
+
+    allowed_chart_types = ["Auto", "Barra", "Box"]
+
+# Y múltiplo (somente numéricos)
+numeric_cols = [c for c in dff.columns if is_numeric_dtype(dff[c]) and c != time_col]
+default_y = [c for c in ["ph", "condutividade"] if c in numeric_cols] or numeric_cols[:2]
+
+st.markdown("#### 📊 Parâmetros do Gráfico")
+y_cols = st.multiselect("Selecione parâmetros:", options=numeric_cols, default=default_y, key="y_params_select")
+
+if not y_cols:
+    st.info("Selecione pelo menos um parâmetro.")
+    st.stop()
+
+# Detectar se todos os parâmetros têm a mesma ordem de grandeza
+def get_scale(col_name: str) -> str:
+    """Retorna a escala aproximada de uma coluna (para agrupar parâmetros similares)"""
+    vals = dff[col_name].dropna()
+    if len(vals) == 0:
+        return "unknown"
+    range_val = vals.max() - vals.min()
+    if range_val == 0:
+        return "unknown"
+    # Escala logarítmica: 0.1-10 | 10-100 | 100-1000 etc
+    import math
+    magnitude = math.floor(math.log10(range_val))
+    return f"10^{magnitude}"
+
+scales = {col: get_scale(col) for col in y_cols}
+unique_scales = set(scales.values())
+
+# Se todos têm a mesma escala, usar apenas Y1
+if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
+    y_left = y_cols
+    y_right = []
+    st.success("✅ Um eixo Y (escalas similares)")
+else:
+    st.markdown("##### 📐 Distribuição dos Eixos")
+    col_y1, col_y2 = st.columns(2, gap="medium")
+    with col_y1:
+        st.markdown("**Eixo Y1 (esquerdo)**")
+        y_left = st.multiselect(
+            "Selecione:",
+            options=y_cols,
+            default=y_cols[:1],
+            key="y_left_select",
+            label_visibility="collapsed"
+        )
+    with col_y2:
+        st.markdown("**Eixo Y2 (direito)**")
+        y_right_display = [c for c in y_cols if c not in y_left]
+        if y_right_display:
+            st.markdown(" ")
+            for param in y_right_display:
+                st.caption(f"• {param}")
+        else:
+            st.caption("—")
+        y_right = y_right_display
+
+st.markdown("")
+st.markdown("")
+
+col_tipo, col_agg = st.columns([2, 1], gap="medium")
+with col_tipo:
+    chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=0)
 
 agg = "mean"
 if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):
-    agg = st.selectbox("Agregação (Barra por poço)", ["mean", "median", "min", "max", "sum"], index=0)
+    with col_agg:
+        agg = st.selectbox("Agregação:", ["mean", "median", "min", "max", "sum"], index=0)
 
-group_col = "poco" if x_mode == "Temporal" else None
+st.markdown("")
 
 fig = dual_axis_chart(
     df=dff,
@@ -126,9 +237,4 @@ fig = dual_axis_chart(
     group_col=group_col,
 )
 
-
 st.plotly_chart(fig, use_container_width=True)
-
-# Ajuda visual pro usuário
-with st.expander("Resumo das escalas"):
-    st.write({"Y1 (esquerdo)": y_left, "Y2 (direito)": y_right})
