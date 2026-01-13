@@ -4,11 +4,11 @@
 
 O objetivo deste projeto é criar um dashboard que permita a criação de visualizações extremamente customizáveis em gráficos e informações referentes a medições de poços de monitoramento e de poços de remediação.
 
-## Hierarquia dos dados
+### Hierarquia dos Dados
 ```
 | Área
 ├── Poços
-│   ├── Parâmetros
+│   └── Parâmetros
 ```
 
 ## Visualizações padrão
