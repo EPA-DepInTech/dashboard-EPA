@@ -6,8 +6,7 @@ from services.dataset_service import build_dataset_from_excel, format_datetime_c
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()
 
-st.title("Dashboard de Amostras (Fase 1)")
-st.caption("Envie um Excel para iniciar. Em breve: validação, gráficos e layouts customizáveis.")
+st.title("📊 Dashboard de Amostras")
 
 # ================ SIDE BAR ===============
 with st.sidebar:
@@ -32,26 +31,19 @@ with st.sidebar:
                 st.warning("Arquivo carregado, mas com avisos:")
                 for w in result.warnings:
                     st.write("-", w)
+            if result.skipped:
+                with st.expander("⚠️ Abas ignoradas"):
+                    for s in result.skipped:
+                        st.caption(f"- **{s.sheet}** → {s.reason}")
             st.success("Arquivo carregado e processado")
 
 st.divider()
 
-st.subheader("Navegação rápida")
-
-# ✅ Evita o crash do st.page_link em alguns cenários (se registry falhar)
-# Preferimos switch_page quando disponível.
-col1, col2 = st.columns([1, 3])
-with col1:
-    go = st.button("📈 Criar gráfico", use_container_width=True)
-with col2:
-    st.caption("Abrir a página de criação de gráficos.")
-
-if go:
+if st.button("📈 Criar gráfico", use_container_width=True):
     try:
-        st.switch_page("pages/4_Criar_Grafico.py")
+        st.switch_page("pages/create_graph.py")
     except Exception:
-        # fallback (não derruba o app)
-        st.warning("Não foi possível navegar automaticamente. Abra a página 'Criar gráfico' pelo menu lateral do Streamlit.")
+        st.error("Erro ao abrir página de gráficos.")
 
 file_in_state = get_uploaded_file()
 
@@ -59,47 +51,16 @@ if file_in_state is None:
     st.info("Nenhum arquivo carregado ainda. Use o menu lateral para enviar seu Excel.")
     st.stop()
 
-st.subheader("Informações do arquivo")
-st.write(
-    {
-        "nome": file_in_state.name,
-        "tamanho_kb": round(file_in_state.size / 1024, 2),
-        "tipo": file_in_state.type,
-    }
-)
-
 df_dict = st.session_state.get("df_dict")
 if not df_dict:
     st.info("Arquivo foi carregado, mas ainda não há dataset processado em memória.")
     st.stop()
 
-st.subheader("Tabelas carregadas")
-st.write(list(df_dict.keys()))
-
-# Preview selecionável
-selected = st.selectbox("Selecione uma tabela para visualizar:", list(df_dict.keys()))
+selected = st.selectbox("Tabela:", list(df_dict.keys()))
 df = df_dict[selected]
 
-st.caption(f"Preview: `{selected}` — linhas: {len(df)} | colunas: {len(df.columns)}")
+st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
 # Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
 df_display = remove_accumulated_rows(df)
 df_display = format_datetime_columns_for_display(df_display)
 st.dataframe(df_display, use_container_width=True)
-
-result = build_dataset_from_excel(uploaded)
-
-if result.errors:
-    ...
-else:
-    st.session_state["df_dict"] = result.df_dict
-    if result.warnings:
-        ...
-    if result.skipped:
-        with st.expander("Abas ignoradas (não tabulares / gráficos)"):
-            for s in result.skipped:
-                st.write(f"- **{s.sheet}** → {s.reason} (charts={s.has_charts}, sample={s.non_empty_cells_sample})")
-
-if result.skipped:
-    with st.expander("Abas ignoradas (gráficos/sem tabela)"):
-        for s in result.skipped:
-            st.write(f"- **{s.sheet}** → {s.reason}")
