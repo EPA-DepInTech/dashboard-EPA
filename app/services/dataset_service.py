@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+from data.transformer import combine_sheets
 from openpyxl import load_workbook
 
 
@@ -393,110 +394,130 @@ def _extract_table_from_ws(
 # Main entry
 # =======================
 
+def build_master_dataset(sheets_dict):
+    master = combine_sheets(sheets_dict)
+    # aqui você pode chamar parse_result e validators também
+    return master
+
 def build_dataset_from_excel(uploaded_file) -> DatasetResult:
-    errors: list[str] = []
-    warnings: list[str] = []
-    skipped: list[SheetSkipInfo] = []
+    if "Histórico" in uploaded_file.name:
+        all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
+        df_dict = {}
 
-    try:
-        file_bytes = uploaded_file.getvalue()
-        bio = io.BytesIO(file_bytes)
-    except Exception as e:
-        return DatasetResult(df_dict=None, errors=[f"Falha ao ler bytes do upload: {e}"], warnings=[], skipped=[])
+        # Dividindo as páginas do excel (sheets) em múltiplos dataframes
+        df_dict["VOC"] = all_sheets["Resultados A. - SQIS VOC"]
+        df_dict["SVOC"] = all_sheets["Resultados A. - SQIS SVOC"]
+        df_dict["TPHFP"] = all_sheets["Resultados A. - SQIS TPH FP"]
+        df_dict["TPHFR"] = all_sheets["Resultados A. - SQIS TPH FRACIO"]
+        df_dict["MNA"] = all_sheets["Resultados Analíticos - MNA"]
 
-    try:
-        wb = load_workbook(bio, data_only=True, read_only=True)
-    except Exception as e:
-        return DatasetResult(df_dict=None, errors=[f"Falha ao abrir Excel (openpyxl): {e}"], warnings=[], skipped=[])
+        master = build_master_dataset(df_dict)
 
-    sheet_names = list(wb.sheetnames)
+        return DatasetResult(df_dict=master, errors=[], warnings=[], skipped=[])
+    else:
+        errors: list[str] = []
+        warnings: list[str] = []
+        skipped: list[SheetSkipInfo] = []
 
-    # cria mapa "assunto -> aba tabular" para ignorar "Gráfico X" quando existe a irmã "X"
-    canonical_to_data_sheet: dict[str, str] = {}
-    for s in sheet_names:
-        if not is_chart_sheet_name(s):
-            canon = canonical_sheet_name(s)
-            if canon:
-                canonical_to_data_sheet[canon] = s
-
-    df_dict: dict[str, pd.DataFrame] = {}
-
-    for sheet_name in sheet_names:
-        ws = wb[sheet_name]
-
-        has_charts = _sheet_has_charts(ws)
-        non_empty_sample = _count_non_empty_cells_sample(ws)
-
-        # 1) ignora "Gráfico ..." se existe a aba irmã tabular
-        if is_chart_sheet_name(sheet_name):
-            canon = canonical_sheet_name(sheet_name)
-            if canon and canon in canonical_to_data_sheet:
-                skipped.append(
-                    SheetSkipInfo(
-                        sheet=sheet_name,
-                        reason=f"Aba de gráfico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
-                        has_charts=has_charts,
-                        non_empty_cells_sample=non_empty_sample,
-                    )
-                )
-                continue
-
-        # 2) fallback: tem gráfico e pouco conteúdo tabular
-        if has_charts and non_empty_sample < 40:
-            skipped.append(
-                SheetSkipInfo(
-                    sheet=sheet_name,
-                    reason="Aba contém gráfico e não parece ter tabela (amostra com pouco conteúdo).",
-                    has_charts=True,
-                    non_empty_cells_sample=non_empty_sample,
-                )
-            )
-            continue
-
-        # 3) extrai e limpa tabela
         try:
-            df = _extract_table_from_ws(ws)
-            if df is None:
-                skipped.append(
-                    SheetSkipInfo(
-                        sheet=sheet_name,
-                        reason="Não foi possível identificar uma tabela na aba.",
-                        has_charts=has_charts,
-                        non_empty_cells_sample=non_empty_sample,
-                    )
-                )
-                continue
-
-            df = clean_basic(df)
-            if df.empty:
-                skipped.append(
-                    SheetSkipInfo(
-                        sheet=sheet_name,
-                        reason="Tabela extraída ficou vazia após limpeza.",
-                        has_charts=has_charts,
-                        non_empty_cells_sample=non_empty_sample,
-                    )
-                )
-                continue
-
-            df_dict[sheet_name] = df
-
+            file_bytes = uploaded_file.getvalue()
+            bio = io.BytesIO(file_bytes)
         except Exception as e:
-            warnings.append(f"Erro ao processar a aba '{sheet_name}': {e}")
-            skipped.append(
-                SheetSkipInfo(
-                    sheet=sheet_name,
-                    reason=f"Exceção ao processar: {e}",
-                    has_charts=has_charts,
-                    non_empty_cells_sample=non_empty_sample,
+            return DatasetResult(df_dict=None, errors=[f"Falha ao ler bytes do upload: {e}"], warnings=[], skipped=[])
+
+        try:
+            wb = load_workbook(bio, data_only=True, read_only=True)
+        except Exception as e:
+            return DatasetResult(df_dict=None, errors=[f"Falha ao abrir Excel (openpyxl): {e}"], warnings=[], skipped=[])
+
+        sheet_names = list(wb.sheetnames)
+
+        # cria mapa "assunto -> aba tabular" para ignorar "Gráfico X" quando existe a irmã "X"
+        canonical_to_data_sheet: dict[str, str] = {}
+        for s in sheet_names:
+            if not is_chart_sheet_name(s):
+                canon = canonical_sheet_name(s)
+                if canon:
+                    canonical_to_data_sheet[canon] = s
+
+        df_dict: dict[str, pd.DataFrame] = {}
+
+        for sheet_name in sheet_names:
+            ws = wb[sheet_name]
+
+            has_charts = _sheet_has_charts(ws)
+            non_empty_sample = _count_non_empty_cells_sample(ws)
+
+            # 1) ignora "Gráfico ..." se existe a aba irmã tabular
+            if is_chart_sheet_name(sheet_name):
+                canon = canonical_sheet_name(sheet_name)
+                if canon and canon in canonical_to_data_sheet:
+                    skipped.append(
+                        SheetSkipInfo(
+                            sheet=sheet_name,
+                            reason=f"Aba de gráfico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
+                            has_charts=has_charts,
+                            non_empty_cells_sample=non_empty_sample,
+                        )
+                    )
+                    continue
+
+            # 2) fallback: tem gráfico e pouco conteúdo tabular
+            if has_charts and non_empty_sample < 40:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Aba contém gráfico e não parece ter tabela (amostra com pouco conteúdo).",
+                        has_charts=True,
+                        non_empty_cells_sample=non_empty_sample,
+                    )
                 )
-            )
+                continue
 
-    if not df_dict:
-        errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
-        return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
+            # 3) extrai e limpa tabela
+            try:
+                df = _extract_table_from_ws(ws)
+                if df is None:
+                    skipped.append(
+                        SheetSkipInfo(
+                            sheet=sheet_name,
+                            reason="Não foi possível identificar uma tabela na aba.",
+                            has_charts=has_charts,
+                            non_empty_cells_sample=non_empty_sample,
+                        )
+                    )
+                    continue
 
-    if skipped:
-        warnings.append(f"Foram ignoradas {len(skipped)} abas que não pareciam tabulares (ex.: gráficos).")
+                df = clean_basic(df)
+                if df.empty:
+                    skipped.append(
+                        SheetSkipInfo(
+                            sheet=sheet_name,
+                            reason="Tabela extraída ficou vazia após limpeza.",
+                            has_charts=has_charts,
+                            non_empty_cells_sample=non_empty_sample,
+                        )
+                    )
+                    continue
 
-    return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
+                df_dict[sheet_name] = df
+
+            except Exception as e:
+                warnings.append(f"Erro ao processar a aba '{sheet_name}': {e}")
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason=f"Exceção ao processar: {e}",
+                        has_charts=has_charts,
+                        non_empty_cells_sample=non_empty_sample,
+                    )
+                )
+
+        if not df_dict:
+            errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
+            return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
+
+        if skipped:
+            warnings.append(f"Foram ignoradas {len(skipped)} abas que não pareciam tabulares (ex.: gráficos).")
+
+        return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)

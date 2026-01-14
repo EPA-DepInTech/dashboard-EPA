@@ -2,8 +2,9 @@
 import streamlit as st
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
+import re
 
-from charts.builder import dual_axis_chart
+from charts.builder import dual_axis_chart, dissolved_dual_axis_chart, status_timeline_heatmap
 from services.dataset_service import format_datetime_columns_for_display, remove_accumulated_rows
 
 
@@ -20,12 +21,16 @@ st.title("📈 Criar Gráfico")
 # ✅ Carregar dataset real
 df_dict = st.session_state.get("df_dict")
 
-if not df_dict or not isinstance(df_dict, dict) or len(df_dict) == 0:
+if type(df_dict) == None or not isinstance(df_dict, (dict, pd.DataFrame)) or len(df_dict) == 0:
     st.error("❌ Nenhum Excel carregado. Importe um arquivo na página inicial.")
     st.stop()
 
-table_name = st.selectbox("Tabela:", list(df_dict.keys()))
-df = df_dict[table_name].copy()
+if isinstance(df_dict, dict):
+    table_name = st.selectbox("Tabela:", list(df_dict.keys()))
+    df = df_dict[table_name].copy()
+elif isinstance(df_dict, pd.DataFrame):
+    table_name = "Monitoramento Laboratorial"
+    df = df_dict
 
 # ✅ Mapear colunas (timestamp e poço)
 cols = list(df.columns)
@@ -157,84 +162,220 @@ else:
 
     allowed_chart_types = ["Auto", "Barra", "Box"]
 
-# Y múltiplo (somente numéricos)
-numeric_cols = [c for c in dff.columns if is_numeric_dtype(dff[c]) and c != time_col]
-default_y = [c for c in ["ph", "condutividade"] if c in numeric_cols] or numeric_cols[:2]
+# ===========================
+#  Y + PLOT (com compatibilidade)
+# ===========================
+
+# garante group_col definido (no modo "Por poço" ele pode não existir)
+if x_mode != "Temporal":
+    group_col = None
+
+# Detecta se existe modo laboratório (colunas __num e __status)
+status_num_cols = [c for c in dff.columns if isinstance(c, str) and c.endswith("__num")]
+status_params = sorted({c[:-5] for c in status_num_cols})  # remove "__num"
+has_status_mode = len(status_params) > 0 and any(f"{p}__status" in dff.columns for p in status_params)
+
+enable_status_mode = (x_mode == "Temporal") and has_status_mode
 
 st.markdown("#### 📊 Parâmetros do Gráfico")
-y_cols = st.multiselect("Selecione parâmetros:", options=numeric_cols, default=default_y, key="y_params_select")
 
-if not y_cols:
-    st.info("Selecione pelo menos um parâmetro.")
-    st.stop()
-
-# Detectar se todos os parâmetros têm a mesma ordem de grandeza
-def get_scale(col_name: str) -> str:
-    """Retorna a escala aproximada de uma coluna (para agrupar parâmetros similares)"""
-    vals = dff[col_name].dropna()
-    if len(vals) == 0:
-        return "unknown"
-    range_val = vals.max() - vals.min()
-    if range_val == 0:
-        return "unknown"
-    # Escala logarítmica: 0.1-10 | 10-100 | 100-1000 etc
-    import math
-    magnitude = math.floor(math.log10(range_val))
-    return f"10^{magnitude}"
-
-scales = {col: get_scale(col) for col in y_cols}
-unique_scales = set(scales.values())
-
-# Se todos têm a mesma escala, usar apenas Y1
-if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
-    y_left = y_cols
-    y_right = []
-    st.success("✅ Um eixo Y (escalas similares)")
+if enable_status_mode:
+    plot_mode = st.radio(
+        "Modo de plot:",
+        options=["Padrão (numérico)", "Laboratório (SECO/FASE LIVRE/<)"],
+        horizontal=True,
+        index=1,
+    )
 else:
-    st.markdown("##### 📐 Distribuição dos Eixos")
-    col_y1, col_y2 = st.columns(2, gap="medium")
-    with col_y1:
-        st.markdown("**Eixo Y1 (esquerdo)**")
-        y_left = st.multiselect(
-            "Selecione:",
-            options=y_cols,
-            default=y_cols[:1],
-            key="y_left_select",
-            label_visibility="collapsed"
+    plot_mode = "Padrão (numérico)"
+
+
+# -------------------------
+# MODO PADRÃO (igual ao seu)
+# -------------------------
+if plot_mode == "Padrão (numérico)":
+    numeric_cols = [c for c in dff.columns if is_numeric_dtype(dff[c]) and c != time_col]
+    default_y = [c for c in ["ph", "condutividade"] if c in numeric_cols] or numeric_cols[:2]
+
+    y_cols = st.multiselect(
+        "Selecione parâmetros:",
+        options=numeric_cols,
+        default=default_y,
+        key="y_params_select_numeric",
+    )
+
+    if not y_cols:
+        st.info("Selecione pelo menos um parâmetro.")
+        st.stop()
+
+    # Detectar se todos os parâmetros têm a mesma ordem de grandeza
+    def get_scale(col_name: str) -> str:
+        vals = dff[col_name].dropna()
+        if len(vals) == 0:
+            return "unknown"
+        range_val = vals.max() - vals.min()
+        if range_val == 0:
+            return "unknown"
+        import math
+        magnitude = math.floor(math.log10(abs(range_val))) if range_val != 0 else 0
+        return f"10^{magnitude}"
+
+    scales = {col: get_scale(col) for col in y_cols}
+    unique_scales = set(scales.values())
+
+    if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
+        y_left = y_cols
+        y_right = []
+        st.success("✅ Um eixo Y (escalas similares)")
+    else:
+        st.markdown("##### 📐 Distribuição dos Eixos")
+        col_y1, col_y2 = st.columns(2, gap="medium")
+        with col_y1:
+            st.markdown("**Eixo Y1 (esquerdo)**")
+            y_left = st.multiselect(
+                "Selecione:",
+                options=y_cols,
+                default=y_cols[:1],
+                key="y_left_select_numeric",
+                label_visibility="collapsed"
+            )
+        with col_y2:
+            st.markdown("**Eixo Y2 (direito)**")
+            y_right_display = [c for c in y_cols if c not in y_left]
+            if y_right_display:
+                st.markdown(" ")
+                for param in y_right_display:
+                    st.caption(f"• {param}")
+            else:
+                st.caption("—")
+            y_right = y_right_display
+
+    st.markdown("") 
+
+    col_tipo, col_agg = st.columns([2, 1], gap="medium") 
+    with col_tipo: chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=0)
+    agg = "mean" 
+
+    if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):
+        with col_agg: agg = st.selectbox("Agregação:", ["mean", "median", "min", "max", "sum"], index=0)
+    
+    st.markdown("")
+
+    fig = dual_axis_chart(
+        df=dff,
+        x_col=x_col,
+        y_left=y_left,
+        y_right=y_right,
+        chart_type=chart_type,
+        agg=agg,
+        group_col=group_col if x_mode == "Temporal" else None,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -------------------------
+# MODO LABORATÓRIO (status)
+# -------------------------
+else:
+    # filtro opcional por categoria
+    GROUPS = {
+        "Todos": None,
+        "TPH": r"(?i)\bTPH\b",
+        "BTEX": r"(?i)\b(benzeno|tolueno|etilbenzeno|xilen)\b",
+        "VOC (geral)": r"(?i)\b(cloro|dicloro|tricloro|tetracloro|benzen|tolu|xilen)\b",
+    }
+    sel_group = st.selectbox("Categoria (opcional):", options=list(GROUPS.keys()), index=0)
+    patt = GROUPS[sel_group]
+
+    candidate_params = status_params
+    if patt:
+        candidate_params = [p for p in status_params if re.search(patt, p)]
+
+    # remove parâmetros sem números no recorte (com base no __num)
+    available_params = []
+    for p in candidate_params:
+        col_num = f"{p}__num"
+        if col_num in dff.columns and pd.to_numeric(dff[col_num], errors="coerce").notna().any():
+            available_params.append(p)
+
+    y_params = st.multiselect(
+        "Selecione parâmetros:",
+        options=available_params,
+        default=available_params[:1] if available_params else [],
+        key="y_params_select_status",
+    )
+
+    if not y_params:
+        st.info("Selecione pelo menos um parâmetro.")
+        st.stop()
+
+    # escala usando __num
+    def get_scale_param(param: str) -> str:
+        col_num = f"{param}__num"
+        vals = pd.to_numeric(dff[col_num], errors="coerce").dropna() if col_num in dff.columns else pd.Series([], dtype=float)
+        if len(vals) == 0:
+            return "unknown"
+        range_val = vals.max() - vals.min()
+        if range_val == 0:
+            return "unknown"
+        import math
+        magnitude = math.floor(math.log10(abs(range_val))) if range_val != 0 else 0
+        return f"10^{magnitude}"
+
+    scales = {p: get_scale_param(p) for p in y_params}
+    unique_scales = set(scales.values())
+
+    if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
+        y_left = y_params
+        y_right = []
+        st.success("✅ Um eixo Y (escalas similares)")
+    else:
+        st.markdown("##### 📐 Distribuição dos Eixos")
+        col_y1, col_y2 = st.columns(2, gap="medium")
+        with col_y1:
+            st.markdown("**Eixo Y1 (esquerdo)**")
+            y_left = st.multiselect(
+                "Selecione:",
+                options=y_params,
+                default=y_params[:1],
+                key="y_left_select_status",
+                label_visibility="collapsed"
+            )
+        with col_y2:
+            st.markdown("**Eixo Y2 (direito)**")
+            y_right_display = [p for p in y_params if p not in y_left]
+            if y_right_display:
+                st.markdown(" ")
+                for param in y_right_display:
+                    st.caption(f"• {param}")
+            else:
+                st.caption("—")
+            y_right = y_right_display
+
+    tab1, tab2 = st.tabs(["Valores dissolvidos", "Timeline (status)"])
+
+    with tab1:
+        fig1 = dissolved_dual_axis_chart(
+            df=dff,
+            x_col=x_col,
+            params_left=y_left,
+            params_right=y_right,
+            group_col=group_col,
         )
-    with col_y2:
-        st.markdown("**Eixo Y2 (direito)**")
-        y_right_display = [c for c in y_cols if c not in y_left]
-        if y_right_display:
-            st.markdown(" ")
-            for param in y_right_display:
-                st.caption(f"• {param}")
-        else:
-            st.caption("—")
-        y_right = y_right_display
+        st.plotly_chart(fig1, use_container_width=True)
 
-st.markdown("")
-st.markdown("")
-
-col_tipo, col_agg = st.columns([2, 1], gap="medium")
-with col_tipo:
-    chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=0)
-
-agg = "mean"
-if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):
-    with col_agg:
-        agg = st.selectbox("Agregação:", ["mean", "median", "min", "max", "sum"], index=0)
-
-st.markdown("")
-
-fig = dual_axis_chart(
-    df=dff,
-    x_col=x_col,
-    y_left=y_left,
-    y_right=y_right,
-    chart_type=chart_type,
-    agg=agg,
-    group_col=group_col,
-)
-
-st.plotly_chart(fig, use_container_width=True)
+    with tab2:
+        # timeline fica mais clara mostrando 1 parâmetro por vez
+        timeline_param = st.selectbox(
+            "Parâmetro para timeline:",
+            options=y_left + y_right,
+            index=0,
+            key="timeline_param_select",
+        )
+        fig2 = status_timeline_heatmap(
+            df=dff,
+            x_col=x_col,
+            group_col=group_col,
+            param=timeline_param,
+        )
+        st.plotly_chart(fig2, use_container_width=True)
