@@ -4,7 +4,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import re
 
-from charts.builder import dual_axis_chart, dual_axis_status_chart
+from charts.builder import dual_axis_chart, dissolved_dual_axis_chart, status_timeline_heatmap
 from services.dataset_service import format_datetime_columns_for_display, remove_accumulated_rows
 
 
@@ -255,7 +255,7 @@ if plot_mode == "Padrão (numérico)":
     col_tipo, col_agg = st.columns([2, 1], gap="medium") 
     with col_tipo: chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=0)
     agg = "mean" 
-    
+
     if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):
         with col_agg: agg = st.selectbox("Agregação:", ["mean", "median", "min", "max", "sum"], index=0)
     
@@ -352,11 +352,30 @@ else:
                 st.caption("—")
             y_right = y_right_display
 
-    fig = dual_axis_status_chart(
-        df=dff,
-        x_col=x_col,
-        params_left=y_left,
-        params_right=y_right,
-        group_col=group_col,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    tab1, tab2 = st.tabs(["Valores dissolvidos", "Timeline (status)"])
+
+    with tab1:
+        fig1 = dissolved_dual_axis_chart(
+            df=dff,
+            x_col=x_col,
+            params_left=y_left,
+            params_right=y_right,
+            group_col=group_col,
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+    with tab2:
+        # timeline fica mais clara mostrando 1 parâmetro por vez
+        timeline_param = st.selectbox(
+            "Parâmetro para timeline:",
+            options=y_left + y_right,
+            index=0,
+            key="timeline_param_select",
+        )
+        fig2 = status_timeline_heatmap(
+            df=dff,
+            x_col=x_col,
+            group_col=group_col,
+            param=timeline_param,
+        )
+        st.plotly_chart(fig2, use_container_width=True)
