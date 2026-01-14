@@ -2,7 +2,128 @@
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import numpy as np
 
+########################################################
+#          GRAPH BUILDER FOR NON NUM PARAMS            #
+########################################################
+
+def dual_axis_status_chart(
+    df: pd.DataFrame,
+    x_col: str,
+    params_left: list[str],
+    params_right: list[str],
+    group_col: str | None = None,
+):
+    """
+    Espera colunas:
+      <param>__num
+      <param>__status
+
+    Faz:
+    - linha com __num (quebra onde status = SECO ou MISSING)
+    - markers coloridos:
+        SECO: vermelho em y=0 (quebra linha)
+        FASE_LIVRE: laranja em y=cap (cap calculado por param)
+        MISSING: cinza em y=0 (opcional)
+    """
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    def add_param_traces(sub: pd.DataFrame, param: str, secondary: bool, prefix: str):
+        num_col = f"{param}__num"
+        st_col = f"{param}__status"
+        if num_col not in sub.columns or st_col not in sub.columns:
+            return
+
+        # ordena por tempo
+        s = sub[[x_col, num_col, st_col]].copy()
+        s = s.sort_values(by=x_col)
+
+        # cap para FASE LIVRE: baseado no máximo observado (MEASURED/LT_RL)
+        base = s[s[st_col].isin(["MEASURED", "MEASURED_QUAL", "LT_RL"])][num_col].dropna()
+        cap = (base.max() * 1.2) if len(base) else 1.0
+
+        # Linha: só onde não é SECO/MISSING/FASE_LIVRE
+        y_line = s[num_col].copy()
+        y_line[s[st_col].isin(["SECO", "MISSING", "FASE_LIVRE", "TEXT"])] = np.nan
+
+        fig.add_trace(
+            go.Scatter(
+                x=s[x_col],
+                y=y_line,
+                mode="lines",
+                name=f"{prefix}{param}",
+            ),
+            secondary_y=secondary,
+        )
+
+        # SECO marker (vermelho) em y=0
+        mask_seco = s[st_col] == "SECO"
+        if mask_seco.any():
+            fig.add_trace(
+                go.Scatter(
+                    x=s.loc[mask_seco, x_col],
+                    y=np.zeros(mask_seco.sum()),
+                    mode="markers",
+                    name=f"{prefix}{param} · SECO",
+                    marker=dict(color="red", size=8),
+                ),
+                secondary_y=secondary,
+            )
+
+        # FASE LIVRE marker (laranja) em y=cap
+        mask_fl = s[st_col] == "FASE_LIVRE"
+        if mask_fl.any():
+            fig.add_trace(
+                go.Scatter(
+                    x=s.loc[mask_fl, x_col],
+                    y=np.full(mask_fl.sum(), cap),
+                    mode="markers",
+                    name=f"{prefix}{param} · FASE LIVRE",
+                    marker=dict(color="orange", size=8),
+                ),
+                secondary_y=secondary,
+            )
+
+        # MISSING marker (cinza) em y=0 (opcional)
+        mask_miss = s[st_col] == "MISSING"
+        if mask_miss.any():
+            fig.add_trace(
+                go.Scatter(
+                    x=s.loc[mask_miss, x_col],
+                    y=np.zeros(mask_miss.sum()),
+                    mode="markers",
+                    name=f"{prefix}{param} · SEM MEDIÇÃO",
+                    marker=dict(color="gray", size=6),
+                ),
+                secondary_y=secondary,
+            )
+
+    # agrupa por poço (se existir)
+    if group_col and group_col in df.columns:
+        for g, sub in df.groupby(group_col, sort=True):
+            prefix = f"{g} · "
+            for p in params_left:
+                add_param_traces(sub, p, secondary=False, prefix=prefix)
+            for p in params_right:
+                add_param_traces(sub, p, secondary=True, prefix=prefix)
+    else:
+        for p in params_left:
+            add_param_traces(df, p, secondary=False, prefix="")
+        for p in params_right:
+            add_param_traces(df, p, secondary=True, prefix="")
+
+    fig.update_layout(
+        xaxis_title=x_col,
+        legend_title_text="Séries / Status",
+    )
+    fig.update_yaxes(title_text="Y1", secondary_y=False)
+    fig.update_yaxes(title_text="Y2", secondary_y=True)
+    return fig
+
+########################################################
+#                 NORMAL GRAPH BUILDER                 #
+########################################################
 
 def dual_axis_chart(
     df: pd.DataFrame,

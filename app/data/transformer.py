@@ -17,6 +17,73 @@ def normalize_poco(poco: str) -> str:
     return f"PM-{num}"  # se quiser zero à esquerda: f"PM-{num:02d}"
 
 
+def propagate_merged_markers(col: pd.Series, markers=("SECO", "FASE LIVRE")) -> pd.Series:
+    """
+    Preenche NaNs abaixo de um marcador (ex.: 'FASE LIVRE', 'SECO') dentro da mesma coluna.
+    Isso recupera o efeito de célula mesclada verticalmente no Excel.
+
+    Importante: só propaga esses marcadores (não propaga números).
+    """
+    s = col.copy()
+
+    # normaliza para comparar (mantém valores originais no s)
+    s_norm = s.astype(str).str.strip().str.upper()
+
+    # identifica células que são marcadores de interesse
+    is_marker = s.notna() & s_norm.isin(tuple(m.upper() for m in markers))
+
+    # mantém só os marcadores, resto vira NaN, depois faz ffill
+    marker_only = s.where(is_marker)
+    marker_ffill = marker_only.ffill()
+
+    # preenche NaNs do original com o último marcador visto acima
+    # (se não havia marcador acima, continua NaN)
+    return s.fillna(marker_ffill)
+
+def classify_result(raw):
+    """
+    Regras do seu monitoramento:
+    - "< qualquer número" => num=0, status="LT_RL" -- Less Then Resolution Lab
+    - "SECO" => num=NaN, status="SECO"
+    - "FASE LIVRE" => num=NaN (cap será aplicado no gráfico), status="FASE_LIVRE"
+    - NaN real => num=NaN, status="MISSING"
+    - número => num=float, status="MEASURED"
+    - texto com número (ex: 133*J) => extrai número, status="MEASURED_QUAL"
+    """
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return ("MISSING", np.nan)
+
+    s = str(raw).strip()
+    if s == "" or s.lower() == "nan":
+        return ("MISSING", np.nan)
+
+    su = s.upper()
+
+    if "SECO" in su:
+        return ("SECO", np.nan)
+
+    if "FASE LIVRE" in su:
+        return ("FASE_LIVRE", np.nan)
+
+    if su.startswith("<"):
+        return ("LT_RL", 0.0)
+
+    # tenta extrair número (inclusive de "133*J")
+    m = re.search(r"([0-9]+(?:[.,][0-9]+)?)", s)
+    if not m:
+        return ("TEXT", np.nan)
+
+    num_str = m.group(1).replace(".", "").replace(",", ".")
+    try:
+        num = float(num_str)
+    except:
+        return ("TEXT", np.nan)
+
+    # se tinha letras/sufixo, marca como qualificado
+    status = "MEASURED" if s.strip() == m.group(1) else "MEASURED_QUAL"
+    return (status, num)
+
+
 def wide_sheet_to_sample_rows(
     df_wide: pd.DataFrame,
     sheet_name: str | None = None,
@@ -138,8 +205,23 @@ def wide_sheet_to_sample_rows(
         if isinstance(pontos, pd.DataFrame):
             pontos = pontos.iloc[:, 0]
 
-        vals = data_params.iloc[:, i]  # <- por posição, sempre Series
-        values = dict(zip(pontos.tolist(), vals.tolist()))
+        vals = data_params.iloc[:, i]
+        vals = propagate_merged_markers(vals, markers=("SECO", "FASE LIVRE"))
+
+        raw_map = dict(zip(pontos.tolist(), vals.tolist()))
+
+        # gera colunas auxiliares
+        num_map = {}
+        status_map = {}
+        for k, v in raw_map.items():
+            status, num = classify_result(v)
+            num_map[f"{k}__num"] = num
+            status_map[f"{k}__status"] = status
+
+        # você pode escolher manter o raw ou não
+        values = raw_map
+        values.update(num_map)
+        values.update(status_map)
 
         # (opcional) proteger nomes reservados sem perder dado:
         reserved = {"Poço", "Data", "Amostra", "Sheet"}

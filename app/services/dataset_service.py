@@ -413,7 +413,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
 
         master = build_master_dataset(df_dict)
 
-        return DatasetResult(df_dict=master, errors=[], warnings=[])
+        return DatasetResult(df_dict=master, errors=[], warnings=[], skipped=[])
     else:
         errors: list[str] = []
         warnings: list[str] = []

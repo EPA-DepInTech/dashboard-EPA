@@ -2,6 +2,7 @@
 import streamlit as st
 from core.state import init_session_state, set_uploaded_file, get_uploaded_file
 from services.dataset_service import build_dataset_from_excel, format_datetime_columns_for_display, remove_accumulated_rows
+import pandas as pd
 
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()
@@ -52,12 +53,16 @@ if file_in_state is None:
     st.stop()
 
 df_dict = st.session_state.get("df_dict")
-if not df_dict:
+if type(df_dict) == None:
     st.info("Arquivo foi carregado, mas ainda não há dataset processado em memória.")
     st.stop()
 
-selected = st.selectbox("Tabela:", list(df_dict.keys()))
-df = df_dict[selected]
+if type(df_dict) == dict:
+    selected = st.selectbox("Tabela:", list(df_dict.keys()))
+    df = df_dict[selected]
+elif type(df_dict) == pd.DataFrame:
+    df = df_dict
+    selected = 'Campanhas de Monitoramento'
 
 st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
 # Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
