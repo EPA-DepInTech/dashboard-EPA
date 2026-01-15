@@ -15,6 +15,18 @@ EVENT_MARKERS = {
     "MISSING": ("gray", "circle-open", 7, "SEM MEDICAO"),
 }
 
+LEGEND_STYLE = dict(
+    x=1.02,
+    y=1,
+    xanchor="left",
+    yanchor="top",
+    orientation="v",
+    bordercolor="rgba(0, 0, 0, 0.2)",
+    borderwidth=1,
+    itemsizing="constant",
+    tracegroupgap=6,
+)
+
 # --- 1) Valores dissolvidos: linha/markers usando <param>__num, mas SEM estourar escala por FASE LIVRE ---
 def dissolved_dual_axis_chart(
     df: pd.DataFrame,
@@ -84,7 +96,9 @@ def dissolved_dual_axis_chart(
 
     fig.update_layout(
         xaxis_title=x_col,
-        legend_title_text="Séries / Status",
+        legend_title_text="Series / Status",
+        legend=LEGEND_STYLE,
+        margin=dict(r=250),
     )
     fig.update_yaxes(title_text="Y1", secondary_y=False)
     fig.update_yaxes(title_text="Y2", secondary_y=True)
@@ -209,8 +223,8 @@ def dual_axis_chart(
 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         # Se tiver group_col, incluímos no nome pra não misturar
-        def _name(row_serie, row_group, axis_label):
-            return f"{row_group} · {row_serie} ({axis_label})" if row_group else f"{row_serie} ({axis_label})"
+        def _name(row_serie, row_group):
+            return f"{row_group} · {row_serie}" if row_group else f"{row_serie}"
 
         if group_col:
             groups = sorted(grouped[group_col].unique())
@@ -222,13 +236,13 @@ def dual_axis_chart(
             for col in y_left:
                 sub = gdf[gdf["serie"] == col]
                 fig.add_trace(
-                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g, "Y1")),
+                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g)),
                     secondary_y=False,
                 )
             for col in y_right:
                 sub = gdf[gdf["serie"] == col]
                 fig.add_trace(
-                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g, "Y2")),
+                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g)),
                     secondary_y=True,
                 )
 
@@ -236,14 +250,7 @@ def dual_axis_chart(
             barmode="group",
             xaxis_title=x_col,
             legend_title_text="Parâmetros",
-            legend=dict(
-                x=1.02,
-                y=1,
-                xanchor="left",
-                yanchor="top",
-                bordercolor="rgba(0, 0, 0, 0.2)",
-                borderwidth=1,
-            ),
+            legend=LEGEND_STYLE,
             margin=dict(r=250),
             hovermode="x unified"
         )
@@ -263,12 +270,12 @@ def dual_axis_chart(
         prefix = f"{group_value} · " if group_value is not None else ""
         for col in y_left:
             fig.add_trace(
-                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col} (Y1)", mode=mode),
+                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col}", mode=mode),
                 secondary_y=False,
             )
         for col in y_right:
             fig.add_trace(
-                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col} (Y2)", mode=mode),
+                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col}", mode=mode),
                 secondary_y=True,
             )
 
@@ -281,15 +288,8 @@ def dual_axis_chart(
     fig.update_layout(
         xaxis_title=x_col,
         legend_title_text="Parâmetros",
-        legend=dict(
-            x=1.02,
-            y=1,
-            xanchor="left",
-            yanchor="top",
-            bordercolor="rgba(0, 0, 0, 0.2)",
-            borderwidth=1,
-        ),
-        margin=dict(r=250),  # Espaço para legenda à direita
+        legend=LEGEND_STYLE,
+        margin=dict(r=250),  # Espaco para legenda a direita
         hovermode="x unified"
     )
     fig.update_yaxes(title_text=" / ".join(y_left) if y_left else "—", secondary_y=False)

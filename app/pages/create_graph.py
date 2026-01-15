@@ -63,8 +63,23 @@ if not default_poco:
     st.warning("Não encontrei uma coluna de poço/ponto automaticamente. Selecione manualmente abaixo.")
 
 with st.expander("⚙️ Colunas"):
-    time_col = st.selectbox("Data/Hora:", options=cols, index=cols.index(default_time) if default_time in cols else 0)
-    group_col_base = st.selectbox("Poço/Ponto:", options=cols, index=cols.index(default_poco) if default_poco in cols else 0)
+    time_col = st.selectbox(
+        "Data/Hora:",
+        options=cols,
+        index=cols.index(default_time) if default_time in cols else 0,
+    )
+
+    group_options = [c for c in cols if c != time_col]
+    if not group_options:
+        st.error("Selecione uma coluna de data/hora diferente para liberar a coluna de poço/ponto.")
+        st.stop()
+
+    group_default = default_poco if default_poco in group_options else group_options[0]
+    group_col_base = st.selectbox(
+        "Poço/Ponto:",
+        options=group_options,
+        index=group_options.index(group_default),
+    )
 
 # tenta converter a coluna de tempo (sem quebrar)
 try:
@@ -244,7 +259,6 @@ if plot_mode == "Padrão (numérico)":
     if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
         y_left = y_cols
         y_right = []
-        st.success("✅ Um eixo Y (escalas similares)")
     else:
         st.markdown("##### 📐 Distribuição dos Eixos")
         col_y1, col_y2 = st.columns(2, gap="medium")
@@ -346,7 +360,6 @@ else:
     if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
         y_left = y_params
         y_right = []
-        st.success("✅ Um eixo Y (escalas similares)")
     else:
         st.markdown("##### 📐 Distribuição dos Eixos")
         col_y1, col_y2 = st.columns(2, gap="medium")
