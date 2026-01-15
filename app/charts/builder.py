@@ -1,12 +1,19 @@
 # charts/builder.py
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import numpy as np
 
 ########################################################
 #          GRAPH BUILDER FOR NON NUM PARAMS            #
 ########################################################
+
+DISSOLVED_STATUSES = {"MEASURED", "MEASURED_QUAL", "LT_RL"}
+EVENT_MARKERS = {
+    "SECO": ("red", "x", 9, "SECO"),
+    "FASE_LIVRE": ("orange", "triangle-up", 9, "FASE LIVRE"),
+    "MISSING": ("gray", "circle-open", 7, "SEM MEDICAO"),
+}
 
 # --- 1) Valores dissolvidos: linha/markers usando <param>__num, mas SEM estourar escala por FASE LIVRE ---
 def dissolved_dual_axis_chart(
@@ -33,7 +40,7 @@ def dissolved_dual_axis_chart(
 
         # Linha: só dissolve (inclui LT_RL=0). Quebra onde SECO/MISSING/FASE_LIVRE.
         y = pd.to_numeric(s[num_col], errors="coerce").copy()
-        y[~s[st_col].isin(["MEASURED", "MEASURED_QUAL", "LT_RL"])] = np.nan
+        y[~s[st_col].isin(DISSOLVED_STATUSES)] = np.nan
 
         fig.add_trace(
             go.Scatter(
@@ -46,42 +53,18 @@ def dissolved_dual_axis_chart(
             secondary_y=secondary,
         )
 
-        # Marcadores de eventos em y=0 (não alteram a escala)
-        mask_seco = s[st_col] == "SECO"
-        if mask_seco.any():
+        # Marcadores de eventos em y=0 (nao alteram a escala)
+        for status, (color, symbol, size, label) in EVENT_MARKERS.items():
+            mask = s[st_col] == status
+            if not mask.any():
+                continue
             fig.add_trace(
                 go.Scatter(
-                    x=s.loc[mask_seco, x_col],
-                    y=np.zeros(mask_seco.sum()),
+                    x=s.loc[mask, x_col],
+                    y=np.zeros(mask.sum()),
                     mode="markers",
-                    name=f"{prefix}{param} · SECO",
-                    marker=dict(color="red", size=9, symbol="x"),
-                ),
-                secondary_y=secondary,
-            )
-
-        mask_fl = s[st_col] == "FASE_LIVRE"
-        if mask_fl.any():
-            fig.add_trace(
-                go.Scatter(
-                    x=s.loc[mask_fl, x_col],
-                    y=np.zeros(mask_fl.sum()),
-                    mode="markers",
-                    name=f"{prefix}{param} · FASE LIVRE",
-                    marker=dict(color="orange", size=9, symbol="triangle-up"),
-                ),
-                secondary_y=secondary,
-            )
-
-        mask_miss = s[st_col] == "MISSING"
-        if mask_miss.any():
-            fig.add_trace(
-                go.Scatter(
-                    x=s.loc[mask_miss, x_col],
-                    y=np.zeros(mask_miss.sum()),
-                    mode="markers",
-                    name=f"{prefix}{param} · SEM MEDIÇÃO",
-                    marker=dict(color="gray", size=7, symbol="circle-open"),
+                    name=f"{prefix}{param} - {label}",
+                    marker=dict(color=color, size=size, symbol=symbol),
                 ),
                 secondary_y=secondary,
             )
