@@ -1,6 +1,8 @@
-import pandas as pd
-import numpy as np
 import re
+
+import numpy as np
+import pandas as pd
+
 
 def normalize_poco(poco: str) -> str:
     """
@@ -76,7 +78,7 @@ def classify_result(raw):
     num_str = m.group(1).replace(".", "").replace(",", ".")
     try:
         num = float(num_str)
-    except:
+    except Exception:
         return ("TEXT", np.nan)
 
     # se tinha letras/sufixo, marca como qualificado
