@@ -1,11 +1,11 @@
-# pages/create_graph.py
-import streamlit as st
-import pandas as pd
-from pandas.api.types import is_numeric_dtype
+﻿# pages/create_graph.py
 import re
 
+import pandas as pd
+import streamlit as st
+from pandas.api.types import is_numeric_dtype
+
 from charts.builder import dual_axis_chart, dissolved_dual_axis_chart, status_timeline_heatmap
-from services.dataset_service import format_datetime_columns_for_display, remove_accumulated_rows
 
 
 def guess_first_existing(cols: list[str], candidates: list[str]) -> str | None:
@@ -21,7 +21,11 @@ st.title("📈 Criar Gráfico")
 # ✅ Carregar dataset real
 df_dict = st.session_state.get("df_dict")
 
-if type(df_dict) == None or not isinstance(df_dict, (dict, pd.DataFrame)) or len(df_dict) == 0:
+if (
+    df_dict is None
+    or not isinstance(df_dict, (dict, pd.DataFrame))
+    or (isinstance(df_dict, dict) and not df_dict)
+):
     st.error("❌ Nenhum Excel carregado. Importe um arquivo na página inicial.")
     st.stop()
 
@@ -31,6 +35,20 @@ if isinstance(df_dict, dict):
 elif isinstance(df_dict, pd.DataFrame):
     table_name = "Monitoramento Laboratorial"
     df = df_dict
+
+# De-duplica nomes de colunas para evitar groupby com colunas ambiguas
+if df.columns.duplicated().any():
+    seen = {}
+    new_cols = []
+    for col in df.columns:
+        if col in seen:
+            seen[col] += 1
+            new_cols.append(f"{col}__dup{seen[col]}")
+        else:
+            seen[col] = 0
+            new_cols.append(col)
+    df.columns = new_cols
+    st.warning("Colunas duplicadas detectadas; renomeadas com sufixo __dupN.")
 
 # ✅ Mapear colunas (timestamp e poço)
 cols = list(df.columns)
@@ -253,7 +271,7 @@ if plot_mode == "Padrão (numérico)":
     st.markdown("") 
 
     col_tipo, col_agg = st.columns([2, 1], gap="medium") 
-    with col_tipo: chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=0)
+    with col_tipo: chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=2)
     agg = "mean" 
 
     if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):

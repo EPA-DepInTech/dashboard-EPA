@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
-from data.transformer import combine_sheets
 from openpyxl import load_workbook
+
+from data.transformer import combine_sheets
 
 
 # =======================
@@ -35,12 +36,16 @@ class DatasetResult:
 # Normalization helpers
 # =======================
 
+def _is_empty_df(df: pd.DataFrame | None) -> bool:
+    return df is None or df.empty
+
+
 def format_datetime_columns_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """
     Remove a hora de colunas datetime, mantendo apenas a data.
     Retorna uma cópia do DataFrame com as datas formatadas como strings (apenas data).
     """
-    if df is None or df.empty:
+    if _is_empty_df(df):
         return df
     
     df_display = df.copy()
@@ -58,7 +63,7 @@ def remove_accumulated_rows(df: pd.DataFrame) -> pd.DataFrame:
     Remove linhas onde a coluna de "Poço" contém "Acumulado".
     Procura por colunas que possam conter essa informação (Poço, poco, ponto, well, etc).
     """
-    if df is None or df.empty:
+    if _is_empty_df(df):
         return df
     
     df_filtered = df.copy()
@@ -125,13 +130,13 @@ def canonical_sheet_name(name: str) -> str:
     """
     n = _norm(name)
 
-    stop = [
+    stop_words = [
         "grafico", "gráfico",
         "grafico de", "grafico do", "grafico da",
         "chart", "dashboard", "resumo", "capa",
         "volume", "volumes",
     ]
-    for w in stop:
+    for w in stop_words:
         n = n.replace(w, " ")
 
     n = re.sub(r"[^a-z0-9]+", " ", n)
@@ -144,7 +149,7 @@ def canonical_sheet_name(name: str) -> str:
 # =======================
 
 def _pick_best_date_col(df: pd.DataFrame) -> str | None:
-    if df is None or df.empty:
+    if _is_empty_df(df):
         return None
 
     cols = list(df.columns)
@@ -193,7 +198,7 @@ def _find_redundant_month_year_cols(df: pd.DataFrame) -> list[str]:
 
 
 def drop_month_year_if_full_date_exists(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
+    if _is_empty_df(df):
         return df
 
     date_col = _pick_best_date_col(df)
@@ -226,7 +231,7 @@ def drop_month_year_if_full_date_exists(df: pd.DataFrame) -> pd.DataFrame:
 # =======================
 
 def clean_basic(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
+    if _is_empty_df(df):
         return df
 
     df = df.copy()
