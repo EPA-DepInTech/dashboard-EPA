@@ -1,399 +1,259 @@
-﻿# pages/create_graph.py
 import re
+import unicodedata
 
 import pandas as pd
 import streamlit as st
-from pandas.api.types import is_numeric_dtype
 
-from charts.builder import dual_axis_chart, dissolved_dual_axis_chart, status_timeline_heatmap
+from charts.builder import SeriesSpec, build_time_chart_plotly
+from services.date_num_prep import add_pr_for_pb_pi, normalize_dates, parse_ptbr_number
 
 
-def guess_first_existing(cols: list[str], candidates: list[str]) -> str | None:
-    lower_map = {c.lower(): c for c in cols}
-    for cand in candidates:
-        if cand.lower() in lower_map:
-            return lower_map[cand.lower()]
+def _norm_key(value: object) -> str:
+    s = str(value).strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+
+def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
+    for col in df.columns:
+        norm = _norm_key(col)
+        if all(t in norm for t in tokens):
+            return col
     return None
 
 
-st.title("📈 Criar Gráfico")
+def _get_poco_col(df: pd.DataFrame) -> str | None:
+    return _find_col(df, ["poco"]) or _find_col(df, ["ponto"])
 
-# ✅ Carregar dataset real
+def _is_pr(value: object) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().upper().startswith("PR-")
+
+
+def prep_vol_bombeado(vol_bombeado: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(vol_bombeado, "Data")
+    vol_col = _find_col(df, ["volume", "bombeado"])
+    if vol_col:
+        df[vol_col] = df[vol_col].map(parse_ptbr_number)
+        df = df.rename(columns={vol_col: "bombeado_vol"})
+    else:
+        df["bombeado_vol"] = pd.NA
+
+    poco_col = _get_poco_col(df)
+    df["poco_key"] = df[poco_col] if poco_col else pd.NA
+    return df
+
+
+def prep_vol_infiltrado(vol_infiltrado: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(vol_infiltrado, "Data")
+    vol_col = _find_col(df, ["volume", "infiltrado"])
+    if vol_col:
+        df[vol_col] = df[vol_col].map(parse_ptbr_number)
+        df = df.rename(columns={vol_col: "infiltrado_vol"})
+    else:
+        df["infiltrado_vol"] = pd.NA
+    return df
+
+
+def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(na_semanal, "Data")
+    for c in ["NA (m)", "NO (m)", "FL (m)"]:
+        if c in df.columns:
+            df[c] = df[c].map(parse_ptbr_number)
+    if "NA (m)" in df.columns:
+        df = df.rename(columns={"NA (m)": "na_m"})
+    else:
+        df["na_m"] = pd.NA
+
+    poco_col = _get_poco_col(df)
+    df["poco_key"] = df[poco_col] if poco_col else pd.NA
+    df["PR"] = df["poco_key"].map(add_pr_for_pb_pi)
+    df["entity_key"] = df["PR"].fillna(df["poco_key"])
+    return df
+
+
+def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
+    na_pr = na[na["PR"].notna()].copy()
+    na_pr = na_pr.groupby("Data", as_index=False)["na_m"].mean()
+
+    vi_daily = vi.groupby("Data", as_index=False)["infiltrado_vol"].sum()
+
+    out = na_pr.merge(vi_daily, on="Data", how="outer")
+    return out.sort_values("Data")
+
+
+def build_point_series(vb: pd.DataFrame, na: pd.DataFrame, points: list[str]) -> pd.DataFrame:
+    vb_f = vb[vb["poco_key"].isin(points)].copy()
+    na_f = na[na["entity_key"].isin(points)].copy()
+
+    vb_wide = (
+        vb_f.groupby(["Data", "poco_key"], as_index=False)["bombeado_vol"]
+        .sum()
+        .pivot_table(index="Data", columns="poco_key", values="bombeado_vol", aggfunc="sum")
+    )
+    vb_wide = vb_wide.add_prefix("bombeado__")
+
+    na_wide = (
+        na_f.groupby(["Data", "entity_key"], as_index=False)["na_m"]
+        .mean()
+        .pivot_table(index="Data", columns="entity_key", values="na_m", aggfunc="mean")
+    )
+    na_wide = na_wide.add_prefix("na__")
+
+    wide = pd.concat([vb_wide, na_wide], axis=1).reset_index()
+    return wide
+
+def _point_color_map(points: list[str]) -> dict[str, str]:
+    palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+    ]
+    return {p: palette[i % len(palette)] for i, p in enumerate(points)}
+
+
+st.title("NA e Volume - Visualizacoes")
+
 df_dict = st.session_state.get("df_dict")
-
-if (
-    df_dict is None
-    or not isinstance(df_dict, (dict, pd.DataFrame))
-    or (isinstance(df_dict, dict) and not df_dict)
-):
-    st.error("❌ Nenhum Excel carregado. Importe um arquivo na página inicial.")
+if df_dict is None or not isinstance(df_dict, dict):
+    st.info("Arquivo foi carregado, mas ainda nao ha dataset em memoria.")
     st.stop()
 
-if isinstance(df_dict, dict):
-    table_name = st.selectbox("Tabela:", list(df_dict.keys()))
-    df = df_dict[table_name].copy()
-elif isinstance(df_dict, pd.DataFrame):
-    table_name = "Monitoramento Laboratorial"
-    df = df_dict
+for required in ["Volume Bombeado", "Volume Infiltrado", "NA Semanal"]:
+    if required not in df_dict:
+        st.error(f"Planilha obrigatoria ausente: {required}")
+        st.stop()
 
-# De-duplica nomes de colunas para evitar groupby com colunas ambiguas
-if df.columns.duplicated().any():
-    seen = {}
-    new_cols = []
-    for col in df.columns:
-        if col in seen:
-            seen[col] += 1
-            new_cols.append(f"{col}__dup{seen[col]}")
+vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
+vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])
+na = prep_na_semanal(df_dict["NA Semanal"])
+
+st.subheader("Media do NA (PR) vs Volume Infiltrado")
+
+na_vi = build_na_pr_vs_infiltrado(na, vi)
+
+series = [
+    SeriesSpec(
+        y="na_m",
+        label="NA medio PR (m)",
+        kind="line",
+        marker="circle",
+        color="#2ca02c",
+    ),
+    SeriesSpec(
+        y="infiltrado_vol",
+        label="Volume Infiltrado",
+        kind="bar",
+        axis="y2",
+        color="#1f77b4",
+    ),
+]
+
+fig, _ = build_time_chart_plotly(
+    na_vi,
+    x="Data",
+    series=series,
+    title="NA medio PR vs Volume Infiltrado",
+    show_range_slider=False,
+    limit_points=200000,
+    return_insights=False,
+)
+fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
+fig.update_yaxes(title_text="Volume Infiltrado (m³)", secondary_y=True)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("Volume Bombeado vs NA (por ponto)")
+
+all_points = sorted(
+    set(vb["poco_key"].dropna().unique().tolist())
+    | set(na["entity_key"].dropna().unique().tolist())
+)
+all_points = [p for p in all_points if p and p != "Acumulado" and _is_pr(p)]
+if not all_points:
+    st.info("Nao ha pontos PR para visualizar.")
+    st.stop()
+
+mode = st.radio(
+    "Modo de selecao",
+    ["Selecionar pontos (checkboxes)", "Um ponto por vez"],
+    horizontal=True,
+)
+
+if mode == "Um ponto por vez":
+    selected_points = [st.selectbox("Ponto", all_points)] if all_points else []
+else:
+    selected_points = st.multiselect("Pontos", all_points, default=all_points)
+
+if not selected_points:
+    st.info("Selecione ao menos um ponto para visualizar.")
+    st.stop()
+
+wide = build_point_series(vb, na, selected_points)
+
+color_map = _point_color_map(selected_points)
+single_point = len(selected_points) == 1
+
+series = []
+for point in selected_points:
+    col_na = f"na__{point}"
+    if col_na in wide.columns:
+        if single_point:
+            na_color = "rgba(46, 139, 87, 0.7)"
         else:
-            seen[col] = 0
-            new_cols.append(col)
-    df.columns = new_cols
-    st.warning("Colunas duplicadas detectadas; renomeadas com sufixo __dupN.")
-
-# ✅ Mapear colunas (timestamp e poço)
-cols = list(df.columns)
-
-default_time = guess_first_existing(cols, ["timestamp", "data", "Data", "DATA", "date", "Date"])
-default_poco = guess_first_existing(cols, ["poco", "Poço", "poço", "ponto", "Ponto", "well", "Well"])
-
-if not default_time:
-    st.warning("Não encontrei uma coluna de data/hora automaticamente. Selecione manualmente abaixo.")
-
-if not default_poco:
-    st.warning("Não encontrei uma coluna de poço/ponto automaticamente. Selecione manualmente abaixo.")
-
-with st.expander("⚙️ Colunas"):
-    time_col = st.selectbox("Data/Hora:", options=cols, index=cols.index(default_time) if default_time in cols else 0)
-    group_col_base = st.selectbox("Poço/Ponto:", options=cols, index=cols.index(default_poco) if default_poco in cols else 0)
-
-# tenta converter a coluna de tempo (sem quebrar)
-try:
-    df[time_col] = pd.to_datetime(df[time_col], errors="coerce", dayfirst=True)
-except Exception:
-    pass
-
-st.divider()
-
-# X mode
-x_mode = st.selectbox("Eixo X", ["Temporal", "Por poço"])
-
-if x_mode == "Temporal":
-    x_col = time_col
-
-    # se a coluna de grupo não existir, cria uma dummy
-    if group_col_base not in df.columns:
-        df["poco"] = "Série"
-        group_col = "poco"
-    else:
-        group_col = group_col_base
-
-    # filtros de poço
-    all_groups = sorted(df[group_col].dropna().astype(str).unique())
-    if all_groups:
-        sel_groups = st.multiselect("Poços:", all_groups, default=all_groups)
-    else:
-        sel_groups = []
-
-    # filtro período
-    valid_dt = df[df[x_col].notna()]
-    if len(valid_dt) == 0:
-        st.error("A coluna de tempo está vazia/ inválida. Verifique o mapeamento.")
-        st.stop()
-
-    min_dt, max_dt = valid_dt[x_col].min(), valid_dt[x_col].max()
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input(
-            "Data inicial:",
-            value=min_dt.date(),
-            min_value=min_dt.date(),
-            max_value=max_dt.date(),
-            key="start_date_temporal"
-        )
-    with col2:
-        end_date = st.date_input(
-            "Data final:",
-            value=max_dt.date(),
-            min_value=min_dt.date(),
-            max_value=max_dt.date(),
-            key="end_date_temporal"
-        )
-    
-    # Converter datas para datetime com hora
-    dt_range = (
-        pd.Timestamp(start_date).to_pydatetime(),
-        pd.Timestamp(end_date).replace(hour=23, minute=59, second=59).to_pydatetime()
-    )
-    
-    if start_date > end_date:
-        st.error("❌ Data inicial não pode ser maior que data final!")
-        st.stop()
-
-    dff = df[df[x_col].between(dt_range[0], dt_range[1])].copy()
-    if sel_groups:
-        dff = dff[dff[group_col].astype(str).isin(sel_groups)].copy()
-
-    allowed_chart_types = ["Auto", "Linha", "Dispersão"]
-else:
-    x_col = group_col_base if group_col_base in df.columns else None
-    if not x_col:
-        st.error("Para 'Por poço', você precisa mapear uma coluna categórica (poço/ponto).")
-        st.stop()
-
-    valid_dt = df[df[time_col].notna()]
-    if len(valid_dt) > 0:
-        min_dt, max_dt = valid_dt[time_col].min(), valid_dt[time_col].max()
-        
-        st.markdown("### 📅 Período (para agregação)")
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Data inicial:",
-                value=min_dt.date(),
-                min_value=min_dt.date(),
-                max_value=max_dt.date(),
-                key="start_date_poço"
+            na_color = color_map.get(point)
+        series.append(
+            SeriesSpec(
+                y=col_na,
+                label=f"NA (m) - {point}",
+                kind="line",
+                marker="circle",
+                line_dash="solid",
+                color=na_color,
+                axis="y",
             )
-        with col2:
-            end_date = st.date_input(
-                "Data final:",
-                value=max_dt.date(),
-                min_value=min_dt.date(),
-                max_value=max_dt.date(),
-                key="end_date_poço"
+        )
+    col_vb = f"bombeado__{point}"
+    if col_vb in wide.columns:
+        if single_point:
+            vb_color = "rgba(31, 119, 180, 0.45)"
+        else:
+            vb_color = color_map.get(point)
+        series.append(
+            SeriesSpec(
+                y=col_vb,
+                label=f"Volume Bombeado - {point}",
+                kind="bar",
+                color=vb_color,
+                axis="y2",
             )
-        
-        # Converter datas para datetime com hora
-        dt_range = (
-            pd.Timestamp(start_date).to_pydatetime(),
-            pd.Timestamp(end_date).replace(hour=23, minute=59, second=59).to_pydatetime()
         )
-        
-        if start_date > end_date:
-            st.error("❌ Data inicial não pode ser maior que data final!")
-            st.stop()
-        
-        dff = df[df[time_col].between(dt_range[0], dt_range[1])].copy()
-    else:
-        dff = df.copy()
 
-    allowed_chart_types = ["Auto", "Barra", "Box"]
+if not series:
+    st.info("Sem dados de NA ou volume bombeado para os pontos selecionados.")
+    st.stop()
 
-# ===========================
-#  Y + PLOT (com compatibilidade)
-# ===========================
+fig2, _ = build_time_chart_plotly(
+    wide,
+    x="Data",
+    series=series,
+    title="Volume Bombeado vs NA por ponto",
+    show_range_slider=False,
+    limit_points=200000,
+    return_insights=False,
+)
+fig2.update_layout(barmode="group")
+fig2.update_yaxes(title_text="NA (m)", secondary_y=False)
+fig2.update_yaxes(title_text="Volume Bombeado (m³)", secondary_y=True)
 
-# garante group_col definido (no modo "Por poço" ele pode não existir)
-if x_mode != "Temporal":
-    group_col = None
-
-# Detecta se existe modo laboratório (colunas __num e __status)
-status_num_cols = [c for c in dff.columns if isinstance(c, str) and c.endswith("__num")]
-status_params = sorted({c[:-5] for c in status_num_cols})  # remove "__num"
-has_status_mode = len(status_params) > 0 and any(f"{p}__status" in dff.columns for p in status_params)
-
-enable_status_mode = (x_mode == "Temporal") and has_status_mode
-
-st.markdown("#### 📊 Parâmetros do Gráfico")
-
-if enable_status_mode:
-    plot_mode = st.radio(
-        "Modo de plot:",
-        options=["Padrão (numérico)", "Laboratório (SECO/FASE LIVRE/<)"],
-        horizontal=True,
-        index=1,
-    )
-else:
-    plot_mode = "Padrão (numérico)"
-
-
-# -------------------------
-# MODO PADRÃO (igual ao seu)
-# -------------------------
-if plot_mode == "Padrão (numérico)":
-    numeric_cols = [c for c in dff.columns if is_numeric_dtype(dff[c]) and c != time_col]
-    default_y = [c for c in ["ph", "condutividade"] if c in numeric_cols] or numeric_cols[:2]
-
-    y_cols = st.multiselect(
-        "Selecione parâmetros:",
-        options=numeric_cols,
-        default=default_y,
-        key="y_params_select_numeric",
-    )
-
-    if not y_cols:
-        st.info("Selecione pelo menos um parâmetro.")
-        st.stop()
-
-    # Detectar se todos os parâmetros têm a mesma ordem de grandeza
-    def get_scale(col_name: str) -> str:
-        vals = dff[col_name].dropna()
-        if len(vals) == 0:
-            return "unknown"
-        range_val = vals.max() - vals.min()
-        if range_val == 0:
-            return "unknown"
-        import math
-        magnitude = math.floor(math.log10(abs(range_val))) if range_val != 0 else 0
-        return f"10^{magnitude}"
-
-    scales = {col: get_scale(col) for col in y_cols}
-    unique_scales = set(scales.values())
-
-    if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
-        y_left = y_cols
-        y_right = []
-        st.success("✅ Um eixo Y (escalas similares)")
-    else:
-        st.markdown("##### 📐 Distribuição dos Eixos")
-        col_y1, col_y2 = st.columns(2, gap="medium")
-        with col_y1:
-            st.markdown("**Eixo Y1 (esquerdo)**")
-            y_left = st.multiselect(
-                "Selecione:",
-                options=y_cols,
-                default=y_cols[:1],
-                key="y_left_select_numeric",
-                label_visibility="collapsed"
-            )
-        with col_y2:
-            st.markdown("**Eixo Y2 (direito)**")
-            y_right_display = [c for c in y_cols if c not in y_left]
-            if y_right_display:
-                st.markdown(" ")
-                for param in y_right_display:
-                    st.caption(f"• {param}")
-            else:
-                st.caption("—")
-            y_right = y_right_display
-
-    st.markdown("") 
-
-    col_tipo, col_agg = st.columns([2, 1], gap="medium") 
-    with col_tipo: chart_type = st.selectbox("Tipo de gráfico:", options=allowed_chart_types, index=2)
-    agg = "mean" 
-
-    if x_mode == "Por poço" and (chart_type in ("Auto", "Barra")):
-        with col_agg: agg = st.selectbox("Agregação:", ["mean", "median", "min", "max", "sum"], index=0)
-    
-    st.markdown("")
-
-    fig = dual_axis_chart(
-        df=dff,
-        x_col=x_col,
-        y_left=y_left,
-        y_right=y_right,
-        chart_type=chart_type,
-        agg=agg,
-        group_col=group_col if x_mode == "Temporal" else None,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-
-# -------------------------
-# MODO LABORATÓRIO (status)
-# -------------------------
-else:
-    # filtro opcional por categoria
-    GROUPS = {
-        "Todos": None,
-        "TPH": r"(?i)\bTPH\b",
-        "BTEX": r"(?i)\b(benzeno|tolueno|etilbenzeno|xilen)\b",
-        "VOC (geral)": r"(?i)\b(cloro|dicloro|tricloro|tetracloro|benzen|tolu|xilen)\b",
-    }
-    sel_group = st.selectbox("Categoria (opcional):", options=list(GROUPS.keys()), index=0)
-    patt = GROUPS[sel_group]
-
-    candidate_params = status_params
-    if patt:
-        candidate_params = [p for p in status_params if re.search(patt, p)]
-
-    # remove parâmetros sem números no recorte (com base no __num)
-    available_params = []
-    for p in candidate_params:
-        col_num = f"{p}__num"
-        if col_num in dff.columns and pd.to_numeric(dff[col_num], errors="coerce").notna().any():
-            available_params.append(p)
-
-    y_params = st.multiselect(
-        "Selecione parâmetros:",
-        options=available_params,
-        default=available_params[:1] if available_params else [],
-        key="y_params_select_status",
-    )
-
-    if not y_params:
-        st.info("Selecione pelo menos um parâmetro.")
-        st.stop()
-
-    # escala usando __num
-    def get_scale_param(param: str) -> str:
-        col_num = f"{param}__num"
-        vals = pd.to_numeric(dff[col_num], errors="coerce").dropna() if col_num in dff.columns else pd.Series([], dtype=float)
-        if len(vals) == 0:
-            return "unknown"
-        range_val = vals.max() - vals.min()
-        if range_val == 0:
-            return "unknown"
-        import math
-        magnitude = math.floor(math.log10(abs(range_val))) if range_val != 0 else 0
-        return f"10^{magnitude}"
-
-    scales = {p: get_scale_param(p) for p in y_params}
-    unique_scales = set(scales.values())
-
-    if len(unique_scales) == 1 and list(unique_scales)[0] != "unknown":
-        y_left = y_params
-        y_right = []
-        st.success("✅ Um eixo Y (escalas similares)")
-    else:
-        st.markdown("##### 📐 Distribuição dos Eixos")
-        col_y1, col_y2 = st.columns(2, gap="medium")
-        with col_y1:
-            st.markdown("**Eixo Y1 (esquerdo)**")
-            y_left = st.multiselect(
-                "Selecione:",
-                options=y_params,
-                default=y_params[:1],
-                key="y_left_select_status",
-                label_visibility="collapsed"
-            )
-        with col_y2:
-            st.markdown("**Eixo Y2 (direito)**")
-            y_right_display = [p for p in y_params if p not in y_left]
-            if y_right_display:
-                st.markdown(" ")
-                for param in y_right_display:
-                    st.caption(f"• {param}")
-            else:
-                st.caption("—")
-            y_right = y_right_display
-
-    tab1, tab2 = st.tabs(["Valores dissolvidos", "Timeline (status)"])
-
-    with tab1:
-        fig1 = dissolved_dual_axis_chart(
-            df=dff,
-            x_col=x_col,
-            params_left=y_left,
-            params_right=y_right,
-            group_col=group_col,
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with tab2:
-        # timeline fica mais clara mostrando 1 parâmetro por vez
-        timeline_param = st.selectbox(
-            "Parâmetro para timeline:",
-            options=y_left + y_right,
-            index=0,
-            key="timeline_param_select",
-        )
-        fig2 = status_timeline_heatmap(
-            df=dff,
-            x_col=x_col,
-            group_col=group_col,
-            param=timeline_param,
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2, use_container_width=True)
