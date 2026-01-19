@@ -250,82 +250,6 @@ def _render_plotly(
             fig.add_trace(trace, secondary_y=(spec.axis == "y2"))
             continue
 
-        if (
-            spec.kind in ("line", "step")
-            and pd.api.types.is_numeric_dtype(df[spec.y])
-            and spec.marker
-        ):
-            last_valid = y_vals.ffill()
-            plot_mask = last_valid.notna()
-            if plot_mask.any():
-                line_shape = "hv" if spec.kind == "step" else "linear"
-
-                # Base continuous line using last valid value (gray)
-                fig.add_trace(
-                    go.Scatter(
-                        x=df.loc[plot_mask, x],
-                        y=last_valid.loc[plot_mask],
-                        mode="lines",
-                        name=f"{label} (ausente)",
-                        line=dict(color="rgba(140, 140, 140, 0.6)", dash=spec.line_dash, shape=line_shape),
-                        showlegend=False,
-                        hoverinfo="skip",
-                    ),
-                    secondary_y=(spec.axis == "y2"),
-                )
-
-                # Overlay valid segments in color (only where real data exists)
-                valid_mask = y_vals.notna()
-                if valid_mask.any():
-                    y_valid = y_vals.where(valid_mask)
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df[x],
-                            y=y_valid,
-                            mode="lines",
-                            name=label,
-                            line=dict(color=spec.color, dash=spec.line_dash, shape=line_shape),
-                            showlegend=True,
-                            hovertemplate=hovertemplate,
-                            connectgaps=False,
-                        ),
-                        secondary_y=(spec.axis == "y2"),
-                    )
-
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df.loc[valid_mask, x],
-                            y=y_vals.loc[valid_mask],
-                            mode="markers",
-                            name=label,
-                            marker=dict(symbol=spec.marker, color=spec.color),
-                            showlegend=False,
-                            hovertemplate=hovertemplate,
-                        ),
-                        secondary_y=(spec.axis == "y2"),
-                    )
-
-                # Gray markers for missing points (use last valid)
-                missing_mask = plot_mask & ~valid_mask
-                if missing_mask.any():
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df.loc[missing_mask, x],
-                            y=last_valid.loc[missing_mask],
-                            mode="markers",
-                            name=f"{label} (ausente)",
-                            marker=dict(
-                                symbol="circle",
-                                size=7,
-                                color="rgba(140, 140, 140, 0.7)",
-                            ),
-                            showlegend=False,
-                            hovertemplate=f"<b>{label}</b><br>%{{x}}<br>Valor anterior: %{{y}}<extra></extra>",
-                        ),
-                        secondary_y=(spec.axis == "y2"),
-                    )
-            continue
-
         mode = "lines"
         if spec.kind == "scatter":
             mode = "markers"
@@ -345,6 +269,7 @@ def _render_plotly(
             fill=fill,
             customdata=customdata,
             hovertemplate=hovertemplate,
+            connectgaps=False,
         )
 
         fig.add_trace(trace, secondary_y=(spec.axis == "y2"))

@@ -345,8 +345,10 @@ def _normalize_na_semanal_value(value: object):
         return pd.NA
 
     n = _norm(s)
+    if n in {"nm", "n m", "nao medido"}:
+        return "Não medido"
     if n in {"nd", "n d", "nao localizado", "nao localiz"}:
-        return pd.NA
+        return s
 
     if re.match(r"^[-+]?\d{1,3}(\.\d{3})*(,\d+)?$|^[-+]?\d+([.,]\d+)?$", s):
         s_num = s.replace(" ", "").replace(".", "").replace(",", ".")
@@ -603,7 +605,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
             skipped.append(
                 SheetSkipInfo(
                     sheet=sheet_name,
-                    reason="Aba cont?m gr?fico e n?o parece ter tabela (amostra com pouco conte?do).",
+                    reason="Aba cont?m gr?fico e Não parece ter tabela (amostra com pouco conte?do).",
                     has_charts=True,
                     non_empty_cells_sample=non_empty_sample,
                 )
@@ -617,7 +619,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason="N?o foi poss?vel identificar uma tabela na aba.",
+                        reason="Não foi poss?vel identificar uma tabela na aba.",
                         has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
@@ -654,7 +656,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
 
     if skipped:
-        warnings.append(f"Foram ignoradas {len(skipped)} abas que n?o pareciam tabulares (ex.: gr?ficos).")
+        warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gr?ficos).")
 
     return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
 
