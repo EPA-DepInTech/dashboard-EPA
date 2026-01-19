@@ -10,22 +10,6 @@ import pandas as pd
 ChartKind = Literal["line", "scatter", "bar", "area", "step", "status_step"]
 Agg = Literal["none", "mean", "sum", "median", "min", "max", "count"]
 
-<<<<<<< HEAD
-LEGEND_STYLE = dict(
-    x=1.02,
-    y=1,
-    xanchor="left",
-    yanchor="top",
-    orientation="v",
-    bordercolor="rgba(0, 0, 0, 0.2)",
-    borderwidth=1,
-    itemsizing="constant",
-    tracegroupgap=6,
-)
-
-# --- 1) Valores dissolvidos: linha/markers usando <param>__num, mas SEM estourar escala por FASE LIVRE ---
-def dissolved_dual_axis_chart(
-=======
 
 @dataclass
 class SeriesSpec:
@@ -59,7 +43,6 @@ class SeriesSpec:
 
 
 def build_time_chart_plotly(
->>>>>>> origin/experimental-rework
     df: pd.DataFrame,
     x: str,
     series: Sequence[SeriesSpec],
@@ -291,17 +274,6 @@ def _render_plotly(
 
         fig.add_trace(trace, secondary_y=(spec.axis == "y2"))
 
-<<<<<<< HEAD
-    fig.update_layout(
-        xaxis_title=x_col,
-        legend_title_text="Series / Status",
-        legend=LEGEND_STYLE,
-        margin=dict(r=250),
-    )
-    fig.update_yaxes(title_text="Y1", secondary_y=False)
-    fig.update_yaxes(title_text="Y2", secondary_y=True)
-=======
->>>>>>> origin/experimental-rework
     return fig
 
 
@@ -362,55 +334,6 @@ def interpret_time_series(
             if len(yy) >= 2 and np.nanstd(t) > 0:
                 slope = float(np.polyfit(t, yy, 1)[0])
 
-<<<<<<< HEAD
-def dual_axis_chart(
-    df: pd.DataFrame,
-    x_col: str,
-    y_left: list[str],
-    y_right: list[str],
-    chart_type: str = "Auto",     # Auto | Linha | Dispersão | Barra
-    agg: str = "mean",            # usado quando X é categórico e chart_type == Barra
-    group_col: str | None = None, # ex.: "poco" para separar linhas por poço
-):
-    if not y_left and not y_right:
-        raise ValueError("Selecione ao menos 1 coluna para o eixo Y.")
-
-    cols = [x_col] + y_left + y_right + ([group_col] if group_col else [])
-    d = df[cols].copy()
-
-    x_is_datetime = pd.api.types.is_datetime64_any_dtype(d[x_col])
-
-    if chart_type == "Auto":
-        chart_type = "Linha" if x_is_datetime else "Barra"
-
-    # --- Caso Barra (categórico): mantém seu comportamento com agregação ---
-    if chart_type == "Barra" and not x_is_datetime:
-        if agg not in ("mean", "median", "min", "max", "sum"):
-            agg = "mean"
-
-        long = d.melt(
-            id_vars=[x_col] + ([group_col] if group_col else []),
-            value_vars=y_left + y_right,
-            var_name="serie",
-            value_name="valor",
-        )
-
-        # agrega por X (+ grupo se existir)
-        group_keys = [x_col, "serie"] + ([group_col] if group_col else [])
-        grouped = (
-            long.groupby(group_keys, as_index=False)["valor"]
-            .agg(agg)
-            .rename(columns={"valor": f"valor_{agg}"})
-        )
-
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        # Se tiver group_col, incluímos no nome pra não misturar
-        def _name(row_serie, row_group):
-            return f"{row_group} · {row_serie}" if row_group else f"{row_serie}"
-
-        if group_col:
-            groups = sorted(grouped[group_col].unique())
-=======
             out["series"][label] = {
                 "type": "numeric",
                 "first": first,
@@ -421,41 +344,12 @@ def dual_axis_chart(
                 "max": float(np.nanmax(yy)),
                 "trend_slope_per_day": (slope * 86400.0) if slope is not None else None,
             }
->>>>>>> origin/experimental-rework
         else:
             y_clean = y.dropna().astype(str)
             if y_clean.empty:
                 out["series"][label] = {"type": "categorical", "empty": True}
                 continue
 
-<<<<<<< HEAD
-        for g in groups:
-            gdf = grouped[grouped[group_col] == g] if g is not None else grouped
-            for col in y_left:
-                sub = gdf[gdf["serie"] == col]
-                fig.add_trace(
-                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g)),
-                    secondary_y=False,
-                )
-            for col in y_right:
-                sub = gdf[gdf["serie"] == col]
-                fig.add_trace(
-                    go.Bar(x=sub[x_col], y=sub[f"valor_{agg}"], name=_name(col, g)),
-                    secondary_y=True,
-                )
-
-        fig.update_layout(
-            barmode="group",
-            xaxis_title=x_col,
-            legend_title_text="Parâmetros",
-            legend=LEGEND_STYLE,
-            margin=dict(r=250),
-            hovermode="x unified"
-        )
-        fig.update_yaxes(title_text=" / ".join(y_left) if y_left else "—", secondary_y=False)
-        fig.update_yaxes(title_text=" / ".join(y_right) if y_right else "—", secondary_y=True)
-        return fig
-=======
             counts = y_clean.value_counts(dropna=True).to_dict()
             last = y_clean.iloc[-1]
             transitions = int((y_clean != y_clean.shift(1)).sum() - 1) if len(y_clean) > 1 else 0
@@ -468,7 +362,6 @@ def dual_axis_chart(
                     if pd.isna(dt_sec):
                         continue
                     durations[state] = durations.get(state, 0.0) + float(dt_sec)
->>>>>>> origin/experimental-rework
 
             out["series"][label] = {
                 "type": "categorical",
@@ -478,40 +371,4 @@ def dual_axis_chart(
                 "duration_seconds_by_state_approx": durations,
             }
 
-<<<<<<< HEAD
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    mode = "lines" if chart_type == "Linha" else "markers"
-
-    def add_traces(sub: pd.DataFrame, group_value: str | None):
-        sub = sub.sort_values(by=x_col)
-        prefix = f"{group_value} · " if group_value is not None else ""
-        for col in y_left:
-            fig.add_trace(
-                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col}", mode=mode),
-                secondary_y=False,
-            )
-        for col in y_right:
-            fig.add_trace(
-                go.Scatter(x=sub[x_col], y=sub[col], name=f"{prefix}{col}", mode=mode),
-                secondary_y=True,
-            )
-
-    if group_col:
-        for g, sub in d.groupby(group_col, sort=True):
-            add_traces(sub, str(g))
-    else:
-        add_traces(d, None)
-
-    fig.update_layout(
-        xaxis_title=x_col,
-        legend_title_text="Parâmetros",
-        legend=LEGEND_STYLE,
-        margin=dict(r=250),  # Espaco para legenda a direita
-        hovermode="x unified"
-    )
-    fig.update_yaxes(title_text=" / ".join(y_left) if y_left else "—", secondary_y=False)
-    fig.update_yaxes(title_text=" / ".join(y_right) if y_right else "—", secondary_y=True)
-    return fig
-=======
     return out
->>>>>>> origin/experimental-rework
