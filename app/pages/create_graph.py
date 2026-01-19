@@ -1,4 +1,4 @@
-import re
+﻿import re
 import unicodedata
 
 import pandas as pd
@@ -310,7 +310,6 @@ if df_dict is None or not isinstance(df_dict, dict):
     st.info("Arquivo foi carregado, mas ainda nao ha dataset em memoria.")
     st.stop()
 
-<<<<<<< HEAD
 if isinstance(df_dict, dict):
     table_name = st.selectbox("Tabela:", list(df_dict.keys()))
     df = df_dict[table_name].copy()
@@ -395,11 +394,9 @@ if x_mode == "Temporal":
     valid_dt = df[df[x_col].notna()]
     if len(valid_dt) == 0:
         st.error("A coluna de tempo está vazia/ inválida. Verifique o mapeamento.")
-=======
 for required in ["Volume Bombeado", "Volume Infiltrado", "NA Semanal"]:
     if required not in df_dict:
         st.error(f"Planilha obrigatoria ausente: {required}")
->>>>>>> origin/experimental-rework
         st.stop()
 
 vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
