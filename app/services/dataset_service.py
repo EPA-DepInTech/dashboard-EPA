@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from datetime import date, datetime
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -302,6 +303,98 @@ def _looks_like_na_param(value: object) -> str | None:
     return None
 
 
+def _to_float_maybe_units(value: object) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    s = str(value).strip()
+    if not s or s == "-":
+        return None
+
+    s_low = _norm(s)
+    nums = re.findall(r"[-+]?\d+(?:[.,]\d+)?", s_low)
+    if not nums:
+        return None
+
+    num = nums[0].replace(".", "").replace(",", ".") if "," in nums[0] else nums[0]
+    try:
+        v = float(num)
+    except Exception:
+        return None
+
+    # se vier em mS, converte para uS
+    if "ms" in s_low:
+        v *= 1000.0
+    return v
+
+
+def _extract_in_situ_ws(ws) -> pd.DataFrame | None:
+    records: list[dict[str, object]] = []
+    current_point = None
+    current_date = None
+    param_cols: dict[int, str] = {}
+
+    max_row = ws.max_row
+    max_col = ws.max_column
+
+    def _is_date(v: object) -> bool:
+        return isinstance(v, (pd.Timestamp, datetime, date))
+
+    for r in range(1, max_row + 1):
+        b = ws.cell(r, 2).value  # col B
+        c = ws.cell(r, 3).value  # col C
+
+        if isinstance(b, str) and _norm(b) == "data" and isinstance(c, str) and c.strip():
+            current_point = str(c).strip().upper()
+            param_cols = {}
+            continue
+
+        if isinstance(c, str) and _norm(c) == "ph":
+            for col_idx in range(3, max_col + 1):
+                pname = ws.cell(r, col_idx).value
+                if pname is None:
+                    continue
+                pname = str(pname).strip()
+                if pname:
+                    param_cols[col_idx] = pname
+            continue
+
+        if isinstance(c, str) and _norm(c) in {"saida", "saida"}:
+            current_point = "SAIDA"
+            param_cols = {}
+            continue
+
+        if param_cols:
+            if _is_date(b):
+                current_date = b
+
+            if current_date is None or current_point is None:
+                continue
+
+            rec = {"Data": pd.to_datetime(current_date), "Ponto": current_point}
+            has_any = False
+            for col_idx, pname in param_cols.items():
+                v = ws.cell(r, col_idx).value
+                vnum = _to_float_maybe_units(v)
+                if vnum is not None:
+                    has_any = True
+                rec[pname] = vnum
+
+            if has_any:
+                records.append(rec)
+
+    if not records:
+        return None
+
+    df = pd.DataFrame.from_records(records)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["Data"])
+    df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
+    return df
+
+
 def _is_na_semanal_sheet(ws) -> bool:
     try:
         row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
@@ -359,8 +452,113 @@ def _normalize_na_semanal_value(value: object):
 
     return s
 
+def _is_dt(v: object) -> bool:
+    return isinstance(v, (pd.Timestamp, datetime, date))
+
+def _extract_na_semanal_blocks_ws(ws) -> pd.DataFrame | None:
+    """
+    Formato do arquivo (2): blocos lado a lado.
+    Row1: 'ID do poço', <DATA>, ..., (vazio), 'ID do poço', <DATA>, ...
+    Row2: headers: NA (m), NO (m), FL, Status, Observação
+    """
+    try:
+        row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+        row2 = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))[0]
+    except Exception:
+        return None
+
+    if not row1 or not row2:
+        return None
+
+    max_col = max(len(row1), len(row2))
+    row1 = list(row1) + [None] * (max_col - len(row1))
+    row2 = list(row2) + [None] * (max_col - len(row2))
+
+    # achar índices onde começa um bloco ("ID do poço")
+    starts = []
+    for i, v in enumerate(row1):
+        if v is None:
+            continue
+        if _norm(str(v)) in {"id do poco", "id do poço", "poco", "poço"}:
+            # precisa ter data em i+1
+            if i + 1 < max_col and _is_dt(row1[i + 1]):
+                starts.append(i)
+
+    if not starts:
+        return None
+
+    # valida se a linha 2 parece ter NA/NO/FL perto do primeiro bloco
+    i0 = starts[0]
+    h_na = _looks_like_na_param(row2[i0 + 1]) if i0 + 1 < max_col else None
+    h_no = _looks_like_na_param(row2[i0 + 2]) if i0 + 2 < max_col else None
+    if h_na != "NA (m)" or h_no != "NO (m)":
+        # ainda pode ser, mas é um bom sinal de falha
+        pass
+
+    records: list[dict[str, object]] = []
+    empty_streak = 0
+
+    for row in ws.iter_rows(min_row=3, values_only=True):
+        if row is None:
+            continue
+        row_vals = list(row) + [None] * (max_col - len(row))
+
+        # para depois de várias linhas vazias
+        if all(v is None or (isinstance(v, str) and v.strip() == "") for v in row_vals):
+            empty_streak += 1
+            if empty_streak >= 5:
+                break
+            continue
+        empty_streak = 0
+
+        for start in starts:
+            poco = row_vals[start] if start < max_col else None
+            if poco is None or str(poco).strip() == "":
+                continue
+            poco = str(poco).strip()
+
+            dt = row1[start + 1] if start + 1 < max_col else None
+            dt = pd.to_datetime(dt, errors="coerce", dayfirst=True)
+            if pd.isna(dt):
+                continue
+
+            na_v = _normalize_na_semanal_value(row_vals[start + 1])  # NA (m)
+            no_v = _normalize_na_semanal_value(row_vals[start + 2])  # NO (m)
+            fl_v = _normalize_na_semanal_value(row_vals[start + 3])  # FL
+            stt  = row_vals[start + 4] if start + 4 < max_col else None
+            obs  = row_vals[start + 5] if start + 5 < max_col else None
+
+            rec = {
+                "Poco": poco,
+                "Data": dt,
+                "NA (m)": na_v,
+                "NO (m)": no_v,
+                "FL (m)": fl_v,
+            }
+            if stt not in (None, "-", ""):
+                rec["Status"] = str(stt).strip()
+            if obs not in (None, "-", ""):
+                rec["Observação"] = str(obs).strip()
+
+            records.append(rec)
+
+    if not records:
+        return None
+
+    df = pd.DataFrame.from_records(records)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["Data", "Poco"])
+    df = df.sort_values(["Poco", "Data"]).reset_index(drop=True)
+    return df
+
 
 def _extract_na_semanal_ws(ws) -> pd.DataFrame | None:
+    # ✅ 1) tenta formato BLOCO (arquivo (2))
+    df_block = _extract_na_semanal_blocks_ws(ws)
+    if df_block is not None and not df_block.empty:
+        return df_block
+
+    # ✅ 2) fallback: formato MATRIZ (arquivo (8)) - seu código atual abaixo
     try:
         row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
         row2 = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))[0]
@@ -567,6 +765,39 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
 
     for sheet_name in sheet_names:
         ws = wb[sheet_name]
+
+        sn = _norm(sheet_name)
+        if sn == "na semanal":
+            df = _extract_na_semanal_ws(ws)
+            if df is None or df.empty:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Falha ao interpretar planilha NA semanal.",
+                        has_charts=_sheet_has_charts(ws),
+                        non_empty_cells_sample=_count_non_empty_cells_sample(ws),
+                    )
+                )
+            else:
+                df_dict[sheet_name] = df
+                if "Data" in df.columns:
+                    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+            continue
+
+        if sn == "in situ":
+            df = _extract_in_situ_ws(ws)
+            if df is None or df.empty:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Falha ao interpretar planilha In Situ.",
+                        has_charts=_sheet_has_charts(ws),
+                        non_empty_cells_sample=_count_non_empty_cells_sample(ws),
+                    )
+                )
+            else:
+                df_dict[sheet_name] = df
+            continue
 
         if _is_na_semanal_sheet(ws):
             df = _extract_na_semanal_ws(ws)
