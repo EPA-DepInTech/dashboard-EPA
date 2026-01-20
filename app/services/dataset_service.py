@@ -361,7 +361,7 @@ def _extract_in_situ_ws(ws) -> pd.DataFrame | None:
                     param_cols[col_idx] = pname
             continue
 
-        if isinstance(c, str) and _norm(c) in {"saida", "saida"}:
+        if isinstance(c, str) and _norm(c) == "saida":
             current_point = "SAIDA"
             param_cols = {}
             continue
@@ -753,7 +753,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
 
     sheet_names = list(wb.sheetnames)
 
-    # cria mapa "assunto -> aba tabular" para ignorar "Gr?fico X" quando existe a irm? "X"
+    # cria mapa "assunto -> aba tabular" para ignorar "Gráfico X" quando existe a irmã "X"
     canonical_to_data_sheet: dict[str, str] = {}
     for s in sheet_names:
         if not is_chart_sheet_name(s):
@@ -817,26 +817,26 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         has_charts = _sheet_has_charts(ws)
         non_empty_sample = _count_non_empty_cells_sample(ws)
 
-        # 1) ignora "Gr?fico ..." se existe a aba irm? tabular
+        # 1) ignora "Gráfico ..." se existe a aba irmã tabular
         if is_chart_sheet_name(sheet_name):
             canon = canonical_sheet_name(sheet_name)
             if canon and canon in canonical_to_data_sheet:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason=f"Aba de gr?fico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
+                        reason=f"Aba de gráfico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
                         has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
                 )
                 continue
 
-        # 2) fallback: tem gr?fico e pouco conte?do tabular
+        # 2) fallback: tem gráfico e pouco conteúdo tabular
         if has_charts and non_empty_sample < 40:
             skipped.append(
                 SheetSkipInfo(
                     sheet=sheet_name,
-                    reason="Aba cont?m gr?fico e Não parece ter tabela (amostra com pouco conte?do).",
+                    reason="Aba contém gráfico e Não parece ter tabela (amostra com pouco conteúdo).",
                     has_charts=True,
                     non_empty_cells_sample=non_empty_sample,
                 )
@@ -850,7 +850,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason="Não foi poss?vel identificar uma tabela na aba.",
+                        reason="Não foi possível identificar uma tabela na aba.",
                         has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
@@ -862,7 +862,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason="Tabela extra?da ficou vazia ap?s limpeza.",
+                        reason="Tabela extraída ficou vazia após limpeza.",
                         has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
@@ -876,7 +876,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
             skipped.append(
                 SheetSkipInfo(
                     sheet=sheet_name,
-                    reason=f"Exce??o ao processar: {e}",
+                    reason=f"Exceção ao processar: {e}",
                     has_charts=has_charts,
                     non_empty_cells_sample=non_empty_sample,
                 )
@@ -887,7 +887,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
 
     if skipped:
-        warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gr?ficos).")
+        warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gráficos).")
 
     return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
 

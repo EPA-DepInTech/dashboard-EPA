@@ -2,6 +2,7 @@
 import unicodedata
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
@@ -49,7 +50,7 @@ def _parse_na_value(value: object):
     if "oleos" in n:
         return "Oleoso"
     if "pelicul" in n:
-        return "Pelicula"
+        return "Película"
 
     return s
 
@@ -92,7 +93,7 @@ def _fl_phase(status: object) -> str | None:
     if "oleos" in n:
         return "Oleoso"
     if "pelicul" in n:
-        return "Pelicula"
+        return "Película"
     return None
 
 
@@ -304,46 +305,30 @@ def build_point_series(
     wide = pd.concat([vb_wide, na_wide], axis=1).reset_index()
     return wide, na_flat
 
-def _point_color_map(points: list[str]) -> dict[str, str]:
-    palette = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
-    return {p: palette[i % len(palette)] for i, p in enumerate(points)}
-
-
-st.title("NA e Volume - Visualizacoes")
+st.title("NA e Volume - Visualizações")
 
 df_dict = st.session_state.get("df_dict")
 if df_dict is None or not isinstance(df_dict, dict):
-    st.info("Arquivo foi carregado, mas ainda nao ha dataset em memoria.")
+    st.info("Arquivo foi carregado, mas ainda não há dataset em memória.")
     st.stop()
 
 for required in ["Volume Bombeado", "Volume Infiltrado", "NA Semanal"]:
     if required not in df_dict:
-        st.error(f"Planilha obrigatoria ausente: {required}")
+        st.error(f"Planilha obrigatória ausente: {required}")
         st.stop()
 
 vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
 vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])
 na = prep_na_semanal(df_dict["NA Semanal"])
 
-st.subheader("Media do NA (PR) vs Volume Infiltrado")
+st.subheader("Média do NA (PR) vs Volume Infiltrado")
 
 na_vi = build_na_pr_vs_infiltrado(na, vi)
 
 series = [
     SeriesSpec(
         y="na_val",
-        label="NA medio PR (m)",
+        label="NA médio PR (m)",
         kind="line",
         marker="circle",
         color="#2ca02c",
@@ -361,12 +346,12 @@ fig, _ = build_time_chart_plotly(
     na_vi,
     x="Data",
     series=series,
-    title="NA medio PR vs Volume Infiltrado",
+    title="NA médio PR vs Volume Infiltrado",
     show_range_slider=False,
     limit_points=200000,
     return_insights=False,
 )
-fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
+fig.update_yaxes(title_text="NA médio (m)", secondary_y=False)
 fig.update_yaxes(title_text="Volume Infiltrado (m³)", secondary_y=True)
 
 st.plotly_chart(fig, use_container_width=True)
@@ -379,11 +364,11 @@ all_points = sorted(
 )
 all_points = [p for p in all_points if p and p != "Acumulado" and _is_pr(p)]
 if not all_points:
-    st.info("Nao ha pontos PR para visualizar.")
+    st.info("Não há pontos PR para visualizar.")
     st.stop()
 
 mode = st.radio(
-    "Modo de selecao",
+    "Modo de seleção",
     ["Selecionar pontos (checkboxes)", "Um ponto por vez"],
     horizontal=True,
 )
@@ -399,8 +384,6 @@ if not selected_points:
 
 wide, na_flat = build_point_series(vb, na, selected_points)
 
-color_map = _point_color_map(selected_points)
-
 if "Data" not in wide.columns and "index" in wide.columns:
     wide = wide.rename(columns={"index": "Data"})
 if "Data" not in wide.columns:
@@ -411,7 +394,7 @@ wide = wide.set_index("Data")
 phase_colors = {
     "Odor": "#f1c40f",
     "Oleoso": "#f39c12",
-    "Pelicula": "#e74c3c",
+    "Película": "#e74c3c",
 }
 na_palette = [
     "rgba(46, 139, 87, 0.6)",
@@ -465,7 +448,7 @@ for point in selected_points:
         continue
     point_status = point_status.set_index("Data")
 
-    for phase in ("Odor", "Oleoso", "Pelicula"):
+    for phase in ("Odor", "Oleoso", "Película"):
         phase_col = f"fl_phase__{point}__{phase}"
         phase_series = pd.Series(pd.NA, index=wide.index)
         mask = point_status["fl_phase"] == phase
@@ -576,72 +559,34 @@ for trace in fig2.data:
 bar_width = 1000 * 60 * 60 * 24 * 3
 fig2.update_traces(width=bar_width, selector=dict(type="bar"))
 fig2.update_yaxes(title_text="NA (m)", secondary_y=False)
-fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
+fig2.update_yaxes(title_text="Volume Bombeado (m³)", secondary_y=True)
+
+if "In Situ" in df_dict:
+    compare_in_situ = st.checkbox("Comparar com In Situ")
+    if compare_in_situ:
+        in_situ = prep_in_situ(df_dict["In Situ"])
+        if "Data" in in_situ.columns and "Ponto" in in_situ.columns:
+            points_is = sorted(in_situ["Ponto"].dropna().unique())
+            params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+            if points_is and params_is:
+                point_is = st.selectbox("Ponto (In Situ)", points_is, key="na_in_situ_point")
+                param_is = st.selectbox("Parâmetro (In Situ)", params_is, key="na_in_situ_param")
+                axis_choice = st.selectbox("Eixo (In Situ)", ["Y1", "Y2"], key="na_in_situ_axis")
+                sub_is = in_situ[in_situ["Ponto"] == point_is].dropna(subset=["Data", param_is])
+                if not sub_is.empty:
+                    yaxis = "y2" if axis_choice == "Y2" else "y"
+                    if axis_choice == "Y2":
+                        fig2.update_layout(yaxis2=dict(overlaying="y", side="right"))
+                    fig2.add_trace(
+                        go.Scatter(
+                            x=sub_is["Data"],
+                            y=sub_is[param_is],
+                            mode="lines+markers",
+                            name=f"In Situ - {point_is} - {param_is}",
+                            yaxis=yaxis,
+                        )
+                    )
+        else:
+            st.info("Planilha In Situ não tem colunas suficientes para comparação.")
 
 st.plotly_chart(fig2, use_container_width=True)
-
-# if "In Situ" in df_dict:
-#     st.subheader("In Situ (por ponto)")
-#     in_situ = prep_in_situ(df_dict["In Situ"])
-#     if "Data" not in in_situ.columns or "Ponto" not in in_situ.columns:
-#         st.info("Planilha In Situ nao tem colunas suficientes para grafico.")
-#         st.stop()
-
-#     points_is = sorted(in_situ["Ponto"].dropna().unique())
-#     params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
-
-#     if not points_is or not params_is:
-#         st.info("Nao ha dados suficientes em In Situ para visualizar.")
-#         st.stop()
-
-#     sel_points_is = st.multiselect("Pontos (In Situ)", points_is, default=points_is)
-#     sel_params_is = st.multiselect("Parametros (In Situ)", params_is, default=params_is[:1])
-
-#     if not sel_points_is or not sel_params_is:
-#         st.info("Selecione ao menos um ponto e um parametro.")
-#         st.stop()
-
-#     subset = in_situ[in_situ["Ponto"].isin(sel_points_is)].copy()
-#     long_is = subset.melt(
-#         id_vars=["Data", "Ponto"],
-#         value_vars=sel_params_is,
-#         var_name="param",
-#         value_name="valor",
-#     )
-#     long_is = long_is.dropna(subset=["valor"])
-#     if long_is.empty:
-#         st.info("Nao ha valores para os filtros selecionados.")
-#         st.stop()
-
-#     long_is["serie"] = long_is["param"].astype(str) + " - " + long_is["Ponto"].astype(str)
-#     wide_is = (
-#         long_is.pivot_table(index="Data", columns="serie", values="valor", aggfunc="mean")
-#         .reset_index()
-#     )
-
-#     series_is = [
-#         SeriesSpec(
-#             y=col,
-#             label=col,
-#             kind="line",
-#             marker="circle",
-#             axis="y",
-#         )
-#         for col in wide_is.columns
-#         if col != "Data"
-#     ]
-
-#     if not series_is:
-#         st.info("Nao ha series de In Situ para plotar.")
-#         st.stop()
-
-#     fig_is, _ = build_time_chart_plotly(
-#         wide_is,
-#         x="Data",
-#         series=series_is,
-#         title="In Situ por ponto",
-#         show_range_slider=False,
-#         limit_points=200000,
-#         return_insights=False,
-#     )
-#     st.plotly_chart(fig_is, use_container_width=True)
