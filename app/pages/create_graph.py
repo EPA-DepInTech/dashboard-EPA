@@ -216,6 +216,23 @@ def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(in_situ, "Data")
+    point_col = _get_poco_col(df) or ("Ponto" if "Ponto" in df.columns else None)
+    if point_col and point_col != "Ponto":
+        df = df.rename(columns={point_col: "Ponto"})
+    if "Ponto" in df.columns:
+        df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
+
+    for col in df.columns:
+        if col in ("Data", "Ponto"):
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
     na_pr = na[na["PR"].notna()].copy()
     na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
@@ -562,3 +579,69 @@ fig2.update_yaxes(title_text="NA (m)", secondary_y=False)
 fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
 st.plotly_chart(fig2, use_container_width=True)
+
+# if "In Situ" in df_dict:
+#     st.subheader("In Situ (por ponto)")
+#     in_situ = prep_in_situ(df_dict["In Situ"])
+#     if "Data" not in in_situ.columns or "Ponto" not in in_situ.columns:
+#         st.info("Planilha In Situ nao tem colunas suficientes para grafico.")
+#         st.stop()
+
+#     points_is = sorted(in_situ["Ponto"].dropna().unique())
+#     params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+
+#     if not points_is or not params_is:
+#         st.info("Nao ha dados suficientes em In Situ para visualizar.")
+#         st.stop()
+
+#     sel_points_is = st.multiselect("Pontos (In Situ)", points_is, default=points_is)
+#     sel_params_is = st.multiselect("Parametros (In Situ)", params_is, default=params_is[:1])
+
+#     if not sel_points_is or not sel_params_is:
+#         st.info("Selecione ao menos um ponto e um parametro.")
+#         st.stop()
+
+#     subset = in_situ[in_situ["Ponto"].isin(sel_points_is)].copy()
+#     long_is = subset.melt(
+#         id_vars=["Data", "Ponto"],
+#         value_vars=sel_params_is,
+#         var_name="param",
+#         value_name="valor",
+#     )
+#     long_is = long_is.dropna(subset=["valor"])
+#     if long_is.empty:
+#         st.info("Nao ha valores para os filtros selecionados.")
+#         st.stop()
+
+#     long_is["serie"] = long_is["param"].astype(str) + " - " + long_is["Ponto"].astype(str)
+#     wide_is = (
+#         long_is.pivot_table(index="Data", columns="serie", values="valor", aggfunc="mean")
+#         .reset_index()
+#     )
+
+#     series_is = [
+#         SeriesSpec(
+#             y=col,
+#             label=col,
+#             kind="line",
+#             marker="circle",
+#             axis="y",
+#         )
+#         for col in wide_is.columns
+#         if col != "Data"
+#     ]
+
+#     if not series_is:
+#         st.info("Nao ha series de In Situ para plotar.")
+#         st.stop()
+
+#     fig_is, _ = build_time_chart_plotly(
+#         wide_is,
+#         x="Data",
+#         series=series_is,
+#         title="In Situ por ponto",
+#         show_range_slider=False,
+#         limit_points=200000,
+#         return_insights=False,
+#     )
+#     st.plotly_chart(fig_is, use_container_width=True)
