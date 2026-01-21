@@ -19,12 +19,15 @@ class SeriesSpec:
     """
     y: str
     label: Optional[str] = None
+    x: Optional[str] = None
 
     # Visual
     kind: ChartKind = "line"
     color: Optional[str] = None          # ex: "#1f77b4"
     marker: Optional[str] = None         # plotly: "circle", "square", "x", ...
     line_dash: Optional[str] = None      # "solid", "dash", "dot", "dashdot"
+    marker_line_color: Optional[str] = None
+    marker_line_width: Optional[float] = None
 
     # Eixos
     axis: Literal["y", "y2"] = "y"
@@ -111,8 +114,11 @@ def build_time_chart_plotly(
         if spec.y not in data.columns:
             continue
 
-        cols = [x, spec.y] + (spec.hover_cols or [])
+        x_col = spec.x or x
+        cols = [x_col, spec.y] + (spec.hover_cols or [])
         sdata = data[cols].copy()
+        sdata[x_col] = pd.to_datetime(sdata[x_col], errors="coerce")
+        sdata = sdata.dropna(subset=[x_col])
 
         # 3.1) clip de outliers por quantis (só se for numérico)
         if spec.clip_quantiles and pd.api.types.is_numeric_dtype(sdata[spec.y]):
@@ -123,7 +129,7 @@ def build_time_chart_plotly(
 
         # 3.2) resample + agregação (se solicitado)
         if spec.resample_rule:
-            sdata = sdata.set_index(x)
+            sdata = sdata.set_index(x_col)
 
             agg = "mean" if spec.agg == "none" else spec.agg
 
@@ -149,7 +155,7 @@ def build_time_chart_plotly(
         if spec.rolling_window and pd.api.types.is_numeric_dtype(sdata[spec.y]):
             sdata[spec.y] = sdata[spec.y].rolling(spec.rolling_window, min_periods=1).mean()
 
-        prepped.append({"spec": spec, "data": sdata})
+        prepped.append({"spec": spec, "data": sdata, "x": x_col})
 
     # 4) Renderização Plotly
     fig = _render_plotly(prepped, x=x, title=title, height=height,
@@ -190,6 +196,7 @@ def _render_plotly(
     for item in prepped:
         spec: SeriesSpec = item["spec"]
         df = item["data"]
+        x_col = item.get("x", x)
         label = spec.label or spec.y
 
         customdata = None
@@ -211,14 +218,24 @@ def _render_plotly(
             mapping = {k: i for i, k in enumerate(order)}
             y_num = cat.map(mapping)
 
+            marker_opts = None
+            if spec.marker or spec.color or spec.marker_line_color or spec.marker_line_width:
+                marker_opts = dict(
+                    symbol=spec.marker,
+                    color=spec.color,
+                    line=dict(
+                        color=spec.marker_line_color,
+                        width=spec.marker_line_width,
+                    ) if spec.marker_line_color or spec.marker_line_width else None,
+                )
             fig.add_trace(
                 go.Scatter(
-                    x=df[x],
+                    x=df[x_col],
                     y=y_num,
                     mode="lines+markers" if spec.marker else "lines",
                     name=label,
                     line=dict(color=spec.color, dash=spec.line_dash, shape="hv"),
-                    marker=dict(symbol=spec.marker, color=spec.color) if spec.marker or spec.color else None,
+                    marker=marker_opts,
                     customdata=cat.to_numpy()[:, None],
                     hovertemplate=f"<b>{label}</b><br>%{{x}}<br>Status: %{{customdata[0]}}<extra></extra>",
                 ),
@@ -240,7 +257,7 @@ def _render_plotly(
 
         if spec.kind == "bar":
             trace = go.Bar(
-                x=df[x],
+                x=df[x_col],
                 y=y_vals,
                 name=label,
                 marker=dict(color=spec.color) if spec.color else None,
@@ -259,13 +276,23 @@ def _render_plotly(
         line_shape = "hv" if spec.kind == "step" else "linear"
         fill = "tozeroy" if spec.kind == "area" else None
 
+        marker_opts = None
+        if spec.marker or spec.color or spec.marker_line_color or spec.marker_line_width:
+            marker_opts = dict(
+                symbol=spec.marker,
+                color=spec.color,
+                line=dict(
+                    color=spec.marker_line_color,
+                    width=spec.marker_line_width,
+                ) if spec.marker_line_color or spec.marker_line_width else None,
+            )
         trace = go.Scatter(
-            x=df[x],
+            x=df[x_col],
             y=y_vals,
             mode=mode,
             name=label,
             line=dict(color=spec.color, dash=spec.line_dash, shape=line_shape),
-            marker=dict(symbol=spec.marker, color=spec.color) if spec.marker or spec.color else None,
+            marker=marker_opts,
             fill=fill,
             customdata=customdata,
             hovertemplate=hovertemplate,

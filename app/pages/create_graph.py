@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
-from services.date_num_prep import add_pr_for_pb_pi, normalize_dates, parse_ptbr_number
+from services.date_num_prep import normalize_dates, parse_ptbr_number
 
 
 def _norm_key(value: object) -> str:
@@ -30,7 +30,7 @@ def _parse_na_value(value: object):
     if isinstance(value, (int, float)):
         return float(value)
     s = str(value).strip()
-    if s == "":
+    if s == "" or s == "-":
         return pd.NA
 
     n = _norm_text(s)
@@ -46,16 +46,93 @@ def _parse_na_value(value: object):
 
     if "odor" in n:
         return "Odor"
-    if "oleos" in n:
+    if "oleos" in n or "oleosid" in n:
         return "Oleoso"
     if "pelicul" in n:
         return "Pelicula"
+    if "iridescen" in n:
+        return "Iridescencia"
+    if "seco" in n:
+        return "Seco"
 
     return s
 
 
 def _is_text_value(value: object) -> bool:
     return isinstance(value, str) and value.strip() != ""
+
+
+def _extract_terms(value: object) -> tuple[list[str], list[str], float | None]:
+    if value is None or pd.isna(value):
+        return [], [], None
+    s = str(value).strip()
+    if s == "" or s == "-":
+        return [], [], None
+
+    n_full = _norm_text(s)
+    depth = None
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*prof", n_full)
+    if m:
+        try:
+            depth = float(m.group(1).replace(",", "."))
+        except Exception:
+            depth = None
+
+    if " e " in n_full or " | " in n_full:
+        parts = re.split(r"\s+e\s+|\s+\|\s+", s, flags=re.I)
+    else:
+        parts = [s]
+
+    phases: list[str] = []
+    statuses: list[str] = []
+
+    for part in parts:
+        n = _norm_text(part)
+        found = False
+
+        for key, label in (
+            ("odor", "Odor"),
+            ("oleos", "Oleoso"),
+            ("oleosid", "Oleoso"),
+            ("pelicul", "Pelicula"),
+            ("iridescen", "Iridescencia"),
+        ):
+            if key in n:
+                phases.append(label)
+                n = n.replace(key, " ")
+                found = True
+
+        for key, label in (
+            ("seco", "Seco"),
+            ("satur", "Saturado"),
+        ):
+            if key in n:
+                statuses.append(label)
+                n = n.replace(key, " ")
+                found = True
+
+        if not found:
+            statuses.append(part.strip())
+
+    def _dedupe(items: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in items:
+            key = _norm_text(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
+
+    return _dedupe(phases), _dedupe(statuses), depth
+
+
+def _parse_observacao_text(value: object) -> tuple[str | None, str | None, float | None]:
+    phases, statuses, depth = _extract_terms(value)
+    phase_text = " | ".join(phases) if phases else None
+    status_text = " | ".join(statuses) if statuses else None
+    return phase_text, status_text, depth
 
 
 def _parse_hidrometro_value(value: object):
@@ -89,10 +166,12 @@ def _fl_phase(status: object) -> str | None:
     n = _norm_text(status)
     if "odor" in n:
         return "Odor"
-    if "oleos" in n:
+    if "oleos" in n or "oleosid" in n:
         return "Oleoso"
     if "pelicul" in n:
         return "Pelicula"
+    if "iridescen" in n:
+        return "Iridescencia"
     return None
 
 
@@ -103,7 +182,7 @@ def _collect_statuses(row: pd.Series) -> list[str]:
         phase = None
     if any(pd.notna(row.get(k)) for k in ("na_val", "no_val", "fl_val")):
         return []
-    for key in ("na_status", "no_status", "fl_status"):
+    for key in ("na_status", "no_status", "fl_status", "obs_status"):
         v = row.get(key)
         if pd.isna(v):
             continue
@@ -123,13 +202,17 @@ def _collect_statuses(row: pd.Series) -> list[str]:
         return []
 
     if len(out) > 1:
-        drop_keys = {"nd", "n d", "nao medido"}
+        drop_keys = {"nd", "n d", "nao medido", "seco", "abaixar bomba", "abaixar a bomba"}
         filtered = [s for s in out if _norm_text(s) not in drop_keys]
         if filtered:
             out = filtered
-        if len(out) > 1:
-            out = [out[0]]
-    return out
+    else:
+        out = [s for s in out if _norm_text(s) not in {"abaixar bomba", "abaixar a bomba"}]
+    expanded: list[str] = []
+    for s in out:
+        _, statuses, _ = _extract_terms(s)
+        expanded.extend(statuses)
+    return expanded
 
 
 def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
@@ -142,12 +225,6 @@ def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
 
 def _get_poco_col(df: pd.DataFrame) -> str | None:
     return _find_col(df, ["poco"]) or _find_col(df, ["ponto"])
-
-def _is_pr(value: object) -> bool:
-    if value is None:
-        return False
-    return str(value).strip().upper().startswith("PR-")
-
 
 def prep_vol_bombeado(vol_bombeado: pd.DataFrame) -> pd.DataFrame:
     df = normalize_dates(vol_bombeado, "Data")
@@ -187,11 +264,12 @@ def prep_vol_infiltrado(vol_infiltrado: pd.DataFrame) -> pd.DataFrame:
 
 
 def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_dates(na_semanal, "Data")
+    df = na_semanal.copy()
+    if "Data" in df.columns:
+        df = normalize_dates(df, "Data")
     poco_col = _get_poco_col(df)
     df["poco_key"] = df[poco_col] if poco_col else pd.NA
-    df["PR"] = df["poco_key"].map(add_pr_for_pb_pi)
-    df["entity_key"] = df["PR"].fillna(df["poco_key"])
+    df["entity_key"] = df["poco_key"]
 
     col_map = {"NA (m)": "na", "NO (m)": "no", "FL (m)": "fl"}
     for col, prefix in col_map.items():
@@ -209,10 +287,47 @@ def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
             df[f"{prefix}_status"] = df[f"{prefix}_status"].where(~missing_mask, filled)
 
     fl_phase_raw = df["fl_status"].map(_fl_phase)
-    df["fl_phase"] = fl_phase_raw.where(
-        df["no_val"].isna() & df["fl_val"].isna(),
-        pd.NA,
-    )
+    fl_phase = fl_phase_raw.where(df["no_val"].isna() & df["fl_val"].isna(), pd.NA)
+
+    obs_phase = pd.Series(pd.NA, index=df.index)
+    obs_status = pd.Series(pd.NA, index=df.index)
+    obs_depth = pd.Series(pd.NA, index=df.index)
+
+    obs_text = pd.Series(pd.NA, index=df.index)
+    if "Observacao" in df.columns:
+        obs_text = df["Observacao"]
+    if "Observação" in df.columns:
+        obs_text = obs_text.fillna(df["Observação"])
+
+    if obs_text.notna().any():
+        parsed = obs_text.map(_parse_observacao_text)
+        obs_phase = parsed.map(lambda x: x[0])
+        obs_status = parsed.map(lambda x: x[1])
+        obs_depth = parsed.map(lambda x: x[2])
+
+    if "Status" in df.columns:
+        status_parsed = df["Status"].map(_parse_observacao_text)
+        status_phase = status_parsed.map(lambda x: x[0])
+        status_status = status_parsed.map(lambda x: x[1])
+        status_depth = status_parsed.map(lambda x: x[2])
+        obs_phase = obs_phase.fillna(status_phase)
+        obs_status = obs_status.fillna(status_status)
+        obs_depth = obs_depth.fillna(status_depth)
+
+    fl_phase = fl_phase.fillna(obs_phase)
+    df["obs_status"] = obs_status
+    df["dry_depth"] = obs_depth.where(obs_status.map(lambda x: _norm_text(x) if pd.notna(x) else "") == "seco")
+
+    if "NA (m)" in df.columns:
+        na_terms = df["NA (m)"].map(_extract_terms)
+        na_status_list = na_terms.map(lambda x: x[1])
+        na_depth = na_terms.map(lambda x: x[2])
+        na_has_seco = na_status_list.map(
+            lambda items: any(_norm_text(s) == "seco" for s in items) if isinstance(items, list) else False
+        )
+        df["dry_depth"] = df["dry_depth"].where(df["dry_depth"].notna(), na_depth.where(na_has_seco))
+
+    df["fl_phase"] = fl_phase.where(df["no_val"].isna() & df["fl_val"].isna(), pd.NA)
     return df
 
 
@@ -234,7 +349,7 @@ def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
-    na_pr = na[na["PR"].notna()].copy()
+    na_pr = na[na["entity_key"].notna()].copy()
     na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
 
     vi_daily = vi.groupby("Data", as_index=False)["infiltrado_vol"].sum()
@@ -270,6 +385,8 @@ def build_point_series(
             no_status=("no_status", _first_non_null),
             fl_status=("fl_status", _first_non_null),
             fl_phase=("fl_phase", _first_non_null),
+            dry_depth=("dry_depth", _first_non_null),
+            obs_status=("obs_status", _first_non_null),
         )
         na_flat["fl_phase"] = na_flat["fl_phase"].where(
             na_flat["no_val"].isna() & na_flat["fl_val"].isna(),
@@ -285,7 +402,15 @@ def build_point_series(
             na_flat.pivot_table(index="Data", columns="entity_key", values="fl_val", aggfunc="mean")
             .add_prefix("fl_num__")
         )
-        na_wide = pd.concat([na_wide, fl_wide], axis=1)
+        na_val_wide = (
+            na_flat.pivot_table(index="Data", columns="entity_key", values="na_val", aggfunc="mean")
+            .add_prefix("na_val__")
+        )
+        no_val_wide = (
+            na_flat.pivot_table(index="Data", columns="entity_key", values="no_val", aggfunc="mean")
+            .add_prefix("no_val__")
+        )
+        na_wide = pd.concat([na_wide, fl_wide, na_val_wide, no_val_wide], axis=1)
 
     if "Data" in na_flat.columns and not na_flat.empty:
         na_dates = pd.Index(pd.to_datetime(na_flat["Data"].unique()), name="Data")
@@ -377,21 +502,63 @@ all_points = sorted(
     set(vb["poco_key"].dropna().unique().tolist())
     | set(na["entity_key"].dropna().unique().tolist())
 )
-all_points = [p for p in all_points if p and p != "Acumulado" and _is_pr(p)]
+all_points = [p for p in all_points if p and p != "Acumulado"]
 if not all_points:
-    st.info("Nao ha pontos PR para visualizar.")
+    st.info("Nao ha pontos para visualizar.")
     st.stop()
 
+prefixes = sorted({str(p).strip().upper()[:2] for p in all_points if isinstance(p, str)})
+prefix_options = ["Todos"] + prefixes
+selected_prefix = st.selectbox("Tipo de poco", prefix_options)
+if selected_prefix != "Todos":
+    all_points = [p for p in all_points if str(p).strip().upper().startswith(selected_prefix)]
+    if not all_points:
+        st.info("Nao ha pontos para o tipo selecionado.")
+        st.stop()
+
 mode = st.radio(
-    "Modo de selecao",
-    ["Selecionar pontos (checkboxes)", "Um ponto por vez"],
+    "Modo de visualizacao",
+    ["Geral", "Individual"],
     horizontal=True,
 )
 
-if mode == "Um ponto por vez":
-    selected_points = [st.selectbox("Ponto", all_points)] if all_points else []
+if mode == "Individual":
+    if "point_index" not in st.session_state:
+        st.session_state["point_index"] = 0
+    st.session_state["point_index"] = min(st.session_state["point_index"], len(all_points) - 1)
+    selected_point = st.selectbox(
+        "Ponto",
+        all_points,
+        index=st.session_state["point_index"],
+    )
+    st.session_state["point_index"] = all_points.index(selected_point)
+    nav_cols = st.columns([1, 1, 8], gap="small")
+    if nav_cols[0].button("- Anterior", use_container_width=True, key="prev_point"):
+        st.session_state["point_index"] = max(0, st.session_state["point_index"] - 1)
+        st.rerun()
+    if nav_cols[1].button("+ Proximo", use_container_width=True, key="next_point"):
+        st.session_state["point_index"] = min(len(all_points) - 1, st.session_state["point_index"] + 1)
+        st.rerun()
+    selected_points = [selected_point] if all_points else []
 else:
-    selected_points = st.multiselect("Pontos", all_points, default=all_points)
+    select_mode = st.radio(
+        "Tipo de selecao",
+        ["Campo", "Checkboxes"],
+        horizontal=True,
+    )
+    if select_mode == "Campo":
+        selected_points = st.multiselect("Pontos", all_points, default=all_points)
+    else:
+        st.caption("Selecione os pontos:")
+        if st.button("Limpar selecao"):
+            for point in all_points:
+                st.session_state[f"point_cb_{point}"] = False
+        cols = st.columns(3)
+        selected_points = []
+        for idx, point in enumerate(all_points):
+            col = cols[idx % len(cols)]
+            if col.checkbox(point, value=True, key=f"point_cb_{point}"):
+                selected_points.append(point)
 
 if not selected_points:
     st.info("Selecione ao menos um ponto para visualizar.")
@@ -411,6 +578,7 @@ wide = wide.set_index("Data")
 phase_colors = {
     "Odor": "#f1c40f",
     "Oleoso": "#f39c12",
+    "Iridescencia": "#fff2a8",
     "Pelicula": "#e74c3c",
 }
 na_palette = [
@@ -422,6 +590,12 @@ na_palette = [
 ]
 na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
 fl_bar_color = "rgba(214, 39, 40, 0.6)"
+air_fill = "rgba(0, 0, 0, 0)"
+air_line = "rgba(180, 180, 180, 0.7)"
+water_tail_color = "rgba(30, 90, 150, 0.8)"
+water_fade_mid = "rgba(30, 90, 150, 0.45)"
+water_fade_low = "rgba(30, 90, 150, 0.15)"
+dry_marker_color = "rgba(220, 80, 80, 0.9)"
 vb_palette = [
     "#ffcc00",
     "#2ca02c",
@@ -437,38 +611,114 @@ status_marker_color = "rgba(130, 130, 130, 0.8)"
 phase_specs: list[SeriesSpec] = []
 status_specs: list[SeriesSpec] = []
 
+use_offset = mode == "Individual"
+
 for point in selected_points:
-    base_col = f"na_base__{point}"
-    fl_col = f"fl_num__{point}"
-
-    if base_col not in wide.columns and fl_col not in wide.columns:
-        continue
-
-    base_vals = wide[base_col] if base_col in wide.columns else pd.Series(pd.NA, index=wide.index)
-    fl_vals = wide[fl_col] if fl_col in wide.columns else pd.Series(0.0, index=wide.index)
-
-    bar_top = base_vals
-    if fl_col in wide.columns:
-        bar_top = bar_top.where(bar_top.notna(), 0) + fl_vals.fillna(0)
-        bar_top = bar_top.where(base_vals.notna() | fl_vals.notna(), pd.NA)
-
-    if bar_top.notna().any():
-        span = float(bar_top.max() - bar_top.min())
-    else:
-        span = 1.0
-    offset = max(0.05, span * 0.03)
-
-    marker_y = bar_top.where(bar_top.notna(), 0) + offset
+    na_val_col = f"na_val__{point}"
+    no_val_col = f"no_val__{point}"
+    fl_val_col = f"fl_num__{point}"
 
     point_status = na_flat[na_flat["entity_key"] == point]
+    has_dry = not point_status.empty and point_status["dry_depth"].notna().any()
+    if na_val_col not in wide.columns and no_val_col not in wide.columns and not has_dry:
+        continue
+
+    na_vals = wide[na_val_col] if na_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+    no_vals = wide[no_val_col] if no_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+    fl_vals = wide[fl_val_col] if fl_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+
     if point_status.empty:
         continue
     point_status = point_status.set_index("Data")
 
-    for phase in ("Odor", "Oleoso", "Pelicula"):
+    dry_dates = point_status.index[point_status["dry_depth"].notna()]
+    if len(dry_dates) > 0:
+        na_vals = na_vals.copy()
+        no_vals = no_vals.copy()
+        na_vals.loc[dry_dates.intersection(na_vals.index)] = pd.NA
+        no_vals.loc[dry_dates.intersection(no_vals.index)] = pd.NA
+
+    pump_mask = point_status["obs_status"].astype(str).map(_norm_text).str.contains("abaix")
+    pump_dates = point_status.index[pump_mask]
+
+    air_len = no_vals.where(no_vals.notna(), pd.NA)
+    air_len = air_len.where(air_len.notna(), na_vals.where(na_vals.notna(), pd.NA))
+    if len(dry_dates) > 0:
+        air_len.loc[dry_dates.intersection(air_len.index)] = point_status.loc[
+            dry_dates.intersection(point_status.index),
+            "dry_depth",
+        ]
+    has_na = na_vals.notna()
+    has_no = no_vals.notna()
+    has_fl = fl_vals.notna()
+    fl_len = fl_vals.where(has_fl, pd.NA)
+    fl_len = fl_len.where(fl_len.notna(), (na_vals - no_vals))
+    fl_len = fl_len.where(has_na & (has_no | has_fl), pd.NA)
+    fl_len = fl_len.where(fl_len > 0, pd.NA)
+    water_top_len = pd.Series(0.12, index=wide.index).where(na_vals.notna(), pd.NA)
+    water_mid_len = pd.Series(0.08, index=wide.index).where(na_vals.notna(), pd.NA)
+    water_low_len = pd.Series(0.05, index=wide.index).where(na_vals.notna(), pd.NA)
+
+    if len(pump_dates) > 0:
+        for d in pump_dates:
+            if d in wide.index:
+                water_top_len.loc[d] = pd.NA
+                water_mid_len.loc[d] = pd.NA
+                water_low_len.loc[d] = pd.NA
+
+    air_col = f"air__{point}"
+    fl_seg_col = f"fl_seg__{point}"
+    fl_base_col = f"fl_base__{point}"
+    water_top_col = f"water_top__{point}"
+    water_mid_col = f"water_mid__{point}"
+    water_low_col = f"water_low__{point}"
+    dry_col = f"dry__{point}"
+    pump_col = f"pump__{point}"
+    pump_missing_col = f"pump_missing__{point}"
+
+    wide[air_col] = air_len
+    wide[fl_seg_col] = fl_len
+    fl_base_vals = no_vals.where(has_no, pd.NA)
+    fl_base_vals = fl_base_vals.where(fl_base_vals.notna(), (na_vals - fl_len))
+    wide[fl_base_col] = fl_base_vals
+    wide[water_top_col] = water_top_len
+    wide[water_mid_col] = water_mid_len
+    wide[water_low_col] = water_low_len
+    if len(dry_dates) > 0:
+        wide[dry_col] = pd.NA
+        for d in dry_dates:
+            if d in wide.index:
+                wide.at[d, dry_col] = point_status.at[d, "dry_depth"]
+    if len(pump_dates) > 0:
+        wide[pump_col] = pd.NA
+        wide[pump_missing_col] = pd.NA
+        for d in pump_dates:
+            if d in wide.index:
+                if pd.notna(na_vals.get(d, pd.NA)):
+                    wide.at[d, pump_col] = na_vals.get(d, pd.NA)
+                else:
+                    wide.at[d, pump_missing_col] = 0.08
+                    wide.at[d, pump_col] = 0.12
+
+    base_vals = na_vals
+    if base_vals.notna().any():
+        span = float(base_vals.max() - base_vals.min())
+    else:
+        span = 1.0
+    offset = max(0.05, span * 0.03)
+
+    marker_y = base_vals.where(base_vals.notna(), 0) - offset
+
+    for phase in ("Odor", "Oleoso", "Iridescencia", "Pelicula"):
         phase_col = f"fl_phase__{point}__{phase}"
+        phase_x_col = f"x__{phase_col}"
         phase_series = pd.Series(pd.NA, index=wide.index)
-        mask = point_status["fl_phase"] == phase
+        mask = (
+            point_status["fl_phase"]
+            .astype(str)
+            .map(_norm_text)
+            .str.contains(_norm_text(phase), regex=False)
+        )
         if mask.any():
             mask_idx = mask[mask].index.intersection(wide.index)
             phase_series.loc[mask_idx] = marker_y.reindex(mask_idx)
@@ -476,52 +726,134 @@ for point in selected_points:
             phase_specs.append(
                 SeriesSpec(
                     y=phase_col,
+                    x=phase_x_col if use_offset else None,
                     label=f"FL {phase} - {point}",
                     kind="scatter",
                     marker="triangle-up",
                     color=phase_colors.get(phase, "#e74c3c"),
+                    marker_line_color="#ffffff" if phase == "Iridescencia" else None,
+                    marker_line_width=1.5 if phase == "Iridescencia" else None,
                     axis="y",
                 )
             )
+            if use_offset:
+                present = [
+                    p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
+                    if p in point_status.loc[mask_idx, "fl_phase"].astype(str).map(_norm_text).str.cat(sep=" ")
+                ]
+                if phase not in present:
+                    present = [phase]
+                for d in mask_idx:
+                    if d not in wide.index:
+                        continue
+                    phases_here = [
+                        p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
+                        if _norm_text(p) in _norm_text(str(point_status.at[d, "fl_phase"]))
+                    ]
+                    if not phases_here:
+                        phases_here = [phase]
+                    idx = phases_here.index(phase) if phase in phases_here else 0
+                    offset_hours = (idx - (len(phases_here) - 1) / 2) * 36
+                    wide.at[d, phase_x_col] = d + pd.Timedelta(hours=offset_hours)
 
+    use_offset = mode == "Individual"
     status_lists = point_status.apply(_collect_statuses, axis=1)
     for date_key, statuses in status_lists.items():
-        for status in statuses:
+        if not statuses:
+            continue
+        if not use_offset:
+            statuses = statuses[:1]
+        total = len(statuses)
+        for idx, status in enumerate(statuses):
+            if _norm_text(status) == "seco" and date_key in dry_dates:
+                continue
             col_key = f"status__{point}__{_slug_status(status)}"
+            x_col = f"x__{col_key}"
             if col_key not in wide.columns:
                 wide[col_key] = pd.NA
+                if use_offset:
+                    wide[x_col] = wide.index
+                norm_status = _norm_text(status)
+                marker = "square"
+                color = status_marker_color
+                line_color = None
+                line_width = None
+                if "iridescen" in norm_status:
+                    marker = "triangle-up"
+                    color = "#fff2a8"
+                    line_color = "#ffffff"
+                    line_width = 1.5
                 status_specs.append(
                     SeriesSpec(
                         y=col_key,
+                        x=x_col if use_offset else None,
                         label=f"{status} - {point}",
                         kind="scatter",
-                        marker="square",
-                        color=status_marker_color,
+                        marker=marker,
+                        color=color,
+                        marker_line_color=line_color,
+                        marker_line_width=line_width,
                         axis="y",
                     )
                 )
             if date_key in wide.index:
                 wide.at[date_key, col_key] = marker_y.get(date_key, offset)
+                if use_offset and total > 1:
+                    offset_hours = (idx - (total - 1) / 2) * 36
+                    wide.at[date_key, x_col] = date_key + pd.Timedelta(hours=offset_hours)
 
-wide = wide.reset_index()
-
-base_series: list[SeriesSpec] = []
-fl_series: list[SeriesSpec] = []
-line_series: list[SeriesSpec] = []
-for point in selected_points:
-    col_base = f"na_base__{point}"
-    if col_base in wide.columns:
-        na_color = na_color_map.get(point, na_palette[0])
-        base_series.append(
+    if dry_col in wide.columns and wide[dry_col].notna().any():
+        status_specs.append(
             SeriesSpec(
-                y=col_base,
-                label=f"NA/NO (m) - {point}",
-                kind="bar",
-                color=na_color,
+                y=dry_col,
+                label=f"Seco - {point}",
+                kind="scatter",
+                marker="x",
+                color=dry_marker_color,
                 axis="y",
             )
         )
-    col_fl = f"fl_num__{point}"
+    if pump_col in wide.columns and wide[pump_col].notna().any():
+        status_specs.append(
+            SeriesSpec(
+                y=pump_col,
+                label=f"Abaixar bomba - {point}",
+                kind="scatter",
+                marker="square",
+                color="rgba(255, 255, 255, 0.9)",
+                axis="y",
+            )
+        )
+    if pump_missing_col in wide.columns and wide[pump_missing_col].notna().any():
+        status_specs.append(
+            SeriesSpec(
+                y=pump_missing_col,
+                label=f"Nao medido - {point}",
+                kind="bar",
+                color="rgba(170, 170, 170, 0.7)",
+                axis="y",
+            )
+        )
+
+wide = wide.reset_index()
+
+air_series: list[SeriesSpec] = []
+fl_series: list[SeriesSpec] = []
+water_series: list[SeriesSpec] = []
+line_series: list[SeriesSpec] = []
+for point in selected_points:
+    col_air = f"air__{point}"
+    if col_air in wide.columns:
+        air_series.append(
+            SeriesSpec(
+                y=col_air,
+                label=f"Ar (m) - {point}",
+                kind="bar",
+                color=air_fill,
+                axis="y",
+            )
+        )
+    col_fl = f"fl_seg__{point}"
     if col_fl in wide.columns:
         fl_series.append(
             SeriesSpec(
@@ -529,6 +861,39 @@ for point in selected_points:
                 label=f"Fase livre (m) - {point}",
                 kind="bar",
                 color=fl_bar_color,
+                axis="y",
+            )
+        )
+    col_water_top = f"water_top__{point}"
+    if col_water_top in wide.columns:
+        water_series.append(
+            SeriesSpec(
+                y=col_water_top,
+                label=f"Agua (m) - {point}",
+                kind="bar",
+                color=water_tail_color,
+                axis="y",
+            )
+        )
+    col_water_mid = f"water_mid__{point}"
+    if col_water_mid in wide.columns:
+        water_series.append(
+            SeriesSpec(
+                y=col_water_mid,
+                label=f"Agua (fade) - {point}",
+                kind="bar",
+                color=water_fade_mid,
+                axis="y",
+            )
+        )
+    col_water_low = f"water_low__{point}"
+    if col_water_low in wide.columns:
+        water_series.append(
+            SeriesSpec(
+                y=col_water_low,
+                label=f"Agua (fade2) - {point}",
+                kind="bar",
+                color=water_fade_low,
                 axis="y",
             )
         )
@@ -546,102 +911,152 @@ for point in selected_points:
             )
         )
 
-series = base_series + fl_series + line_series
+series = air_series + fl_series + water_series + line_series
 
 series.extend(phase_specs)
 series.extend(status_specs)
 
 if not series:
-    st.info("Sem dados de NA ou volume bombeado para os pontos selecionados.")
+    st.info("Sem dados de NA, status ou volume bombeado para os pontos selecionados.")
     st.stop()
+
+title_suffix = ""
+if len(selected_points) == 1 and not na_flat.empty:
+    point_key = selected_points[0]
+    status_series = (
+        na_flat[na_flat["entity_key"] == point_key]
+        .sort_values("Data")["obs_status"]
+        .dropna()
+    )
+    if not status_series.empty:
+        title_suffix = f" ({status_series.iloc[-1]})"
 
 fig2, _ = build_time_chart_plotly(
     wide,
     x="Data",
     series=series,
-    title="Volume Bombeado vs NA por ponto",
+    title=f"NA por ponto{title_suffix}",
     show_range_slider=False,
     limit_points=200000,
     return_insights=False,
 )
-fig2.update_layout(barmode="stack", bargap=0.0, bargroupgap=0.05)
+fig2.update_layout(barmode="group", bargap=0.0, bargroupgap=0.05)
 
 for trace in fig2.data:
     if getattr(trace, "type", None) != "bar":
         continue
     if not trace.name or " - " not in trace.name:
         continue
-    trace.offsetgroup = trace.name.split(" - ", 1)[-1]
+    label, point = trace.name.split(" - ", 1)
+    trace.offsetgroup = point
+    trace.alignmentgroup = point
+    if label.startswith("Fase livre"):
+        base_col = f"fl_base__{point}"
+        if base_col in wide.columns:
+            trace.base = wide[base_col].tolist()
+    if label.startswith("Agua"):
+        base_col = f"na_val__{point}"
+        base_series = wide[base_col] if base_col in wide.columns else pd.Series(0, index=wide.index)
+        trace.base = base_series.tolist()
+        if label.startswith("Agua (fade)"):
+            fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).tolist()
+            trace.base = fade_base
+        if label.startswith("Agua (fade2)"):
+            fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).add(
+                wide.get(f"water_mid__{point}", 0)
+            ).tolist()
+            trace.base = fade_base
+    if label.startswith("Ar"):
+        trace.marker.line = dict(color=air_line, width=1.6)
+        trace.marker.color = "rgba(0, 0, 0, 0)"
+
+    if label.startswith("Fase livre"):
+        vals = trace.y
+        trace.text = [
+            f"{v:.2f}" if isinstance(v, (int, float)) and pd.notna(v) else ""
+            for v in vals
+        ]
+        trace.textposition = "inside"
+        trace.textfont = dict(color="#ffffff", size=10)
+
+seen_tail = set()
+for trace in fig2.data:
+    if not getattr(trace, "name", ""):
+        continue
+    if trace.name.startswith("Agua (fade)"):
+        trace.showlegend = False
+    if trace.name.startswith("Agua (fade2)"):
+        trace.showlegend = False
 
 bar_width = 1000 * 60 * 60 * 24 * 3
 fig2.update_traces(width=bar_width, selector=dict(type="bar"))
-fig2.update_yaxes(title_text="NA (m)", secondary_y=False)
+fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
 fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
 st.plotly_chart(fig2, use_container_width=True)
 
-# if "In Situ" in df_dict:
-#     st.subheader("In Situ (por ponto)")
-#     in_situ = prep_in_situ(df_dict["In Situ"])
-#     if "Data" not in in_situ.columns or "Ponto" not in in_situ.columns:
-#         st.info("Planilha In Situ nao tem colunas suficientes para grafico.")
-#         st.stop()
+if "In Situ" in df_dict:
+    st.subheader("In Situ (por ponto)")
+    in_situ = prep_in_situ(df_dict["In Situ"])
+    if "Data" not in in_situ.columns or "Ponto" not in in_situ.columns:
+        st.info("Planilha In Situ nao tem colunas suficientes para grafico.")
+        st.stop()
 
-#     points_is = sorted(in_situ["Ponto"].dropna().unique())
-#     params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+    points_is = sorted(in_situ["Ponto"].dropna().unique())
+    params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
 
-#     if not points_is or not params_is:
-#         st.info("Nao ha dados suficientes em In Situ para visualizar.")
-#         st.stop()
+    if not points_is or not params_is:
+        st.info("Nao ha dados suficientes em In Situ para visualizar.")
+        st.stop()
 
-#     sel_points_is = st.multiselect("Pontos (In Situ)", points_is, default=points_is)
-#     sel_params_is = st.multiselect("Parametros (In Situ)", params_is, default=params_is[:1])
+    sel_points_is = st.multiselect("Pontos (In Situ)", points_is, default=points_is)
+    sel_params_is = st.multiselect("Parametros (In Situ)", params_is, default=params_is[:1])
 
-#     if not sel_points_is or not sel_params_is:
-#         st.info("Selecione ao menos um ponto e um parametro.")
-#         st.stop()
+    if not sel_points_is or not sel_params_is:
+        st.info("Selecione ao menos um ponto e um parametro.")
+        st.stop()
 
-#     subset = in_situ[in_situ["Ponto"].isin(sel_points_is)].copy()
-#     long_is = subset.melt(
-#         id_vars=["Data", "Ponto"],
-#         value_vars=sel_params_is,
-#         var_name="param",
-#         value_name="valor",
-#     )
-#     long_is = long_is.dropna(subset=["valor"])
-#     if long_is.empty:
-#         st.info("Nao ha valores para os filtros selecionados.")
-#         st.stop()
+    subset = in_situ[in_situ["Ponto"].isin(sel_points_is)].copy()
+    long_is = subset.melt(
+        id_vars=["Data", "Ponto"],
+        value_vars=sel_params_is,
+        var_name="param",
+        value_name="valor",
+    )
+    long_is = long_is.dropna(subset=["valor"])
+    if long_is.empty:
+        st.info("Nao ha valores para os filtros selecionados.")
+        st.stop()
 
-#     long_is["serie"] = long_is["param"].astype(str) + " - " + long_is["Ponto"].astype(str)
-#     wide_is = (
-#         long_is.pivot_table(index="Data", columns="serie", values="valor", aggfunc="mean")
-#         .reset_index()
-#     )
+    long_is["serie"] = long_is["param"].astype(str) + " - " + long_is["Ponto"].astype(str)
+    wide_is = (
+        long_is.pivot_table(index="Data", columns="serie", values="valor", aggfunc="mean")
+        .reset_index()
+    )
 
-#     series_is = [
-#         SeriesSpec(
-#             y=col,
-#             label=col,
-#             kind="line",
-#             marker="circle",
-#             axis="y",
-#         )
-#         for col in wide_is.columns
-#         if col != "Data"
-#     ]
+    series_is = [
+        SeriesSpec(
+            y=col,
+            label=col,
+            kind="line",
+            marker="circle",
+            axis="y",
+        )
+        for col in wide_is.columns
+        if col != "Data"
+    ]
 
-#     if not series_is:
-#         st.info("Nao ha series de In Situ para plotar.")
-#         st.stop()
+    if not series_is:
+        st.info("Nao ha series de In Situ para plotar.")
+        st.stop()
 
-#     fig_is, _ = build_time_chart_plotly(
-#         wide_is,
-#         x="Data",
-#         series=series_is,
-#         title="In Situ por ponto",
-#         show_range_slider=False,
-#         limit_points=200000,
-#         return_insights=False,
-#     )
-#     st.plotly_chart(fig_is, use_container_width=True)
+    fig_is, _ = build_time_chart_plotly(
+        wide_is,
+        x="Data",
+        series=series_is,
+        title="In Situ por ponto",
+        show_range_slider=False,
+        limit_points=200000,
+        return_insights=False,
+    )
+    st.plotly_chart(fig_is, use_container_width=True)
