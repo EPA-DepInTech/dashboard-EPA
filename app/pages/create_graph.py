@@ -461,602 +461,778 @@ vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
 vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])
 na = prep_na_semanal(df_dict["NA Semanal"])
 
-st.subheader("Media do NA (PR) vs Volume Infiltrado")
-
-na_vi = build_na_pr_vs_infiltrado(na, vi)
-
-series = [
-    SeriesSpec(
-        y="na_val",
-        label="NA medio PR (m)",
-        kind="line",
-        marker="circle",
-        color="#2ca02c",
-    ),
-    SeriesSpec(
-        y="infiltrado_vol",
-        label="Volume Infiltrado",
-        kind="bar",
-        axis="y2",
-        color="#1f77b4",
-    ),
-]
-
-fig, _ = build_time_chart_plotly(
-    na_vi,
-    x="Data",
-    series=series,
-    title="NA medio PR vs Volume Infiltrado",
-    show_range_slider=False,
-    limit_points=200000,
-    return_insights=False,
+subpage = st.radio(
+    "Subpagina",
+    ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"],
+    horizontal=True,
 )
-fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
-fig.update_yaxes(title_text="Volume Infiltrado (m³)", secondary_y=True)
 
-st.plotly_chart(fig, use_container_width=True)
+if subpage == "Media NA vs Volume Infiltrado":
+    st.subheader("Media do NA (PR) vs Volume Infiltrado")
 
-st.subheader("Volume Bombeado vs NA (por ponto)")
+    na_vi = build_na_pr_vs_infiltrado(na, vi)
 
-all_points = sorted(
-    set(vb["poco_key"].dropna().unique().tolist())
-    | set(na["entity_key"].dropna().unique().tolist())
-)
-all_points = [p for p in all_points if p and p != "Acumulado"]
-if not all_points:
-    st.info("Nao ha pontos para visualizar.")
-    st.stop()
+    series = [
+        SeriesSpec(
+            y="na_val",
+            label="NA medio PR (m)",
+            kind="line",
+            marker="circle",
+            color="#2ca02c",
+            connect_gaps=True,
+        ),
+        SeriesSpec(
+            y="infiltrado_vol",
+            label="Volume Infiltrado",
+            kind="bar",
+            axis="y2",
+            color="#1f77b4",
+        ),
+    ]
 
-prefixes = sorted({str(p).strip().upper()[:2] for p in all_points if isinstance(p, str)})
-prefix_options = ["Todos"] + prefixes
-selected_prefix = st.selectbox("Tipo de poco", prefix_options)
-if selected_prefix != "Todos":
+    fig, _ = build_time_chart_plotly(
+        na_vi,
+        x="Data",
+        series=series,
+        title="NA medio PR vs Volume Infiltrado",
+        show_range_slider=False,
+        limit_points=200000,
+    )
+    fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
+    fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.subheader("Visualizacao aprofundada")
+
+    all_points = sorted(
+        set(vb["poco_key"].dropna().unique().tolist())
+        | set(na["entity_key"].dropna().unique().tolist())
+    )
+    all_points = [p for p in all_points if p and p != "Acumulado"]
+    if not all_points:
+        st.info("Nao ha pontos para visualizar.")
+        st.stop()
+
+    prefixes = sorted({str(p).strip().upper()[:2] for p in all_points if isinstance(p, str)})
+    if not prefixes:
+        st.info("Nao ha tipos de poco para selecionar.")
+        st.stop()
+
+    selected_prefix = st.selectbox("Tipo de poco", prefixes)
     all_points = [p for p in all_points if str(p).strip().upper().startswith(selected_prefix)]
     if not all_points:
         st.info("Nao ha pontos para o tipo selecionado.")
         st.stop()
 
-mode = st.radio(
-    "Modo de visualizacao",
-    ["Geral", "Individual"],
-    horizontal=True,
-)
-
-if mode == "Individual":
-    if "point_index" not in st.session_state:
-        st.session_state["point_index"] = 0
-    st.session_state["point_index"] = min(st.session_state["point_index"], len(all_points) - 1)
-    selected_point = st.selectbox(
-        "Ponto",
-        all_points,
-        index=st.session_state["point_index"],
-    )
-    st.session_state["point_index"] = all_points.index(selected_point)
-    nav_cols = st.columns([1, 1, 8], gap="small")
-    if nav_cols[0].button("- Anterior", use_container_width=True, key="prev_point"):
-        st.session_state["point_index"] = max(0, st.session_state["point_index"] - 1)
-        st.rerun()
-    if nav_cols[1].button("+ Proximo", use_container_width=True, key="next_point"):
-        st.session_state["point_index"] = min(len(all_points) - 1, st.session_state["point_index"] + 1)
-        st.rerun()
-    selected_points = [selected_point] if all_points else []
-else:
-    select_mode = st.radio(
-        "Tipo de selecao",
-        ["Campo", "Checkboxes"],
+    mode = st.radio(
+        "Modo de selecao",
+        ["Poco individual", "Multiplos pocos"],
         horizontal=True,
     )
-    if select_mode == "Campo":
-        selected_points = st.multiselect("Pontos", all_points, default=all_points)
-    else:
-        st.caption("Selecione os pontos:")
-        if st.button("Limpar selecao"):
-            for point in all_points:
-                st.session_state[f"point_cb_{point}"] = False
-        cols = st.columns(3)
-        selected_points = []
-        for idx, point in enumerate(all_points):
-            col = cols[idx % len(cols)]
-            if col.checkbox(point, value=True, key=f"point_cb_{point}"):
-                selected_points.append(point)
 
-if not selected_points:
-    st.info("Selecione ao menos um ponto para visualizar.")
-    st.stop()
+    param_options = ["NA", "Volume bombeado"]
 
-wide, na_flat = build_point_series(vb, na, selected_points)
+    if mode == "Poco individual":
+        if "point_index" not in st.session_state:
+            st.session_state["point_index"] = 0
+        st.session_state["point_index"] = min(st.session_state["point_index"], len(all_points) - 1)
 
-color_map = _point_color_map(selected_points)
-
-if "Data" not in wide.columns and "index" in wide.columns:
-    wide = wide.rename(columns={"index": "Data"})
-if "Data" not in wide.columns:
-    st.info("Sem dados de data para os pontos selecionados.")
-    st.stop()
-wide = wide.set_index("Data")
-
-phase_colors = {
-    "Odor": "#f1c40f",
-    "Oleoso": "#f39c12",
-    "Iridescencia": "#fff2a8",
-    "Pelicula": "#e74c3c",
-}
-na_palette = [
-    "rgba(46, 139, 87, 0.6)",
-    "rgba(40, 161, 152, 0.6)",
-    "rgba(35, 139, 214, 0.6)",
-    "rgba(58, 105, 214, 0.6)",
-    "rgba(94, 88, 214, 0.6)",
-]
-na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
-fl_bar_color = "rgba(214, 39, 40, 0.6)"
-air_fill = "rgba(0, 0, 0, 0)"
-air_line = "rgba(180, 180, 180, 0.7)"
-water_tail_color = "rgba(30, 90, 150, 0.8)"
-water_fade_mid = "rgba(30, 90, 150, 0.45)"
-water_fade_low = "rgba(30, 90, 150, 0.15)"
-dry_marker_color = "rgba(220, 80, 80, 0.9)"
-vb_palette = [
-    "#ffcc00",
-    "#2ca02c",
-    "#d62728",
-    "#9467bd",
-    "#8c564b",
-    "#e377c2",
-    "#bcbd22",
-]
-vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
-status_marker_color = "rgba(130, 130, 130, 0.8)"
-
-phase_specs: list[SeriesSpec] = []
-status_specs: list[SeriesSpec] = []
-
-use_offset = mode == "Individual"
-
-for point in selected_points:
-    na_val_col = f"na_val__{point}"
-    no_val_col = f"no_val__{point}"
-    fl_val_col = f"fl_num__{point}"
-
-    point_status = na_flat[na_flat["entity_key"] == point]
-    has_dry = not point_status.empty and point_status["dry_depth"].notna().any()
-    if na_val_col not in wide.columns and no_val_col not in wide.columns and not has_dry:
-        continue
-
-    na_vals = wide[na_val_col] if na_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
-    no_vals = wide[no_val_col] if no_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
-    fl_vals = wide[fl_val_col] if fl_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
-
-    if point_status.empty:
-        continue
-    point_status = point_status.set_index("Data")
-
-    dry_dates = point_status.index[point_status["dry_depth"].notna()]
-    if len(dry_dates) > 0:
-        na_vals = na_vals.copy()
-        no_vals = no_vals.copy()
-        na_vals.loc[dry_dates.intersection(na_vals.index)] = pd.NA
-        no_vals.loc[dry_dates.intersection(no_vals.index)] = pd.NA
-
-    pump_mask = point_status["obs_status"].astype(str).map(_norm_text).str.contains("abaix")
-    pump_dates = point_status.index[pump_mask]
-
-    air_len = no_vals.where(no_vals.notna(), pd.NA)
-    air_len = air_len.where(air_len.notna(), na_vals.where(na_vals.notna(), pd.NA))
-    if len(dry_dates) > 0:
-        air_len.loc[dry_dates.intersection(air_len.index)] = point_status.loc[
-            dry_dates.intersection(point_status.index),
-            "dry_depth",
-        ]
-    has_na = na_vals.notna()
-    has_no = no_vals.notna()
-    has_fl = fl_vals.notna()
-    fl_len = fl_vals.where(has_fl, pd.NA)
-    fl_len = fl_len.where(fl_len.notna(), (na_vals - no_vals))
-    fl_len = fl_len.where(has_na & (has_no | has_fl), pd.NA)
-    fl_len = fl_len.where(fl_len > 0, pd.NA)
-    water_top_len = pd.Series(0.12, index=wide.index).where(na_vals.notna(), pd.NA)
-    water_mid_len = pd.Series(0.08, index=wide.index).where(na_vals.notna(), pd.NA)
-    water_low_len = pd.Series(0.05, index=wide.index).where(na_vals.notna(), pd.NA)
-
-    if len(pump_dates) > 0:
-        for d in pump_dates:
-            if d in wide.index:
-                water_top_len.loc[d] = pd.NA
-                water_mid_len.loc[d] = pd.NA
-                water_low_len.loc[d] = pd.NA
-
-    air_col = f"air__{point}"
-    fl_seg_col = f"fl_seg__{point}"
-    fl_base_col = f"fl_base__{point}"
-    water_top_col = f"water_top__{point}"
-    water_mid_col = f"water_mid__{point}"
-    water_low_col = f"water_low__{point}"
-    dry_col = f"dry__{point}"
-    pump_col = f"pump__{point}"
-    pump_missing_col = f"pump_missing__{point}"
-
-    wide[air_col] = air_len
-    wide[fl_seg_col] = fl_len
-    fl_base_vals = no_vals.where(has_no, pd.NA)
-    fl_base_vals = fl_base_vals.where(fl_base_vals.notna(), (na_vals - fl_len))
-    wide[fl_base_col] = fl_base_vals
-    wide[water_top_col] = water_top_len
-    wide[water_mid_col] = water_mid_len
-    wide[water_low_col] = water_low_len
-    if len(dry_dates) > 0:
-        wide[dry_col] = pd.NA
-        for d in dry_dates:
-            if d in wide.index:
-                wide.at[d, dry_col] = point_status.at[d, "dry_depth"]
-    if len(pump_dates) > 0:
-        wide[pump_col] = pd.NA
-        wide[pump_missing_col] = pd.NA
-        for d in pump_dates:
-            if d in wide.index:
-                if pd.notna(na_vals.get(d, pd.NA)):
-                    wide.at[d, pump_col] = na_vals.get(d, pd.NA)
-                else:
-                    wide.at[d, pump_missing_col] = 0.08
-                    wide.at[d, pump_col] = 0.12
-
-    base_vals = na_vals
-    if base_vals.notna().any():
-        span = float(base_vals.max() - base_vals.min())
-    else:
-        span = 1.0
-    offset = max(0.05, span * 0.03)
-
-    marker_y = base_vals.where(base_vals.notna(), 0) - offset
-
-    for phase in ("Odor", "Oleoso", "Iridescencia", "Pelicula"):
-        phase_col = f"fl_phase__{point}__{phase}"
-        phase_x_col = f"x__{phase_col}"
-        phase_series = pd.Series(pd.NA, index=wide.index)
-        mask = (
-            point_status["fl_phase"]
-            .astype(str)
-            .map(_norm_text)
-            .str.contains(_norm_text(phase), regex=False)
+        sel_cols = st.columns([5, 2], gap="small")
+        selected_point = sel_cols[0].selectbox(
+            "Poco",
+            all_points,
+            index=st.session_state["point_index"],
         )
-        if mask.any():
-            mask_idx = mask[mask].index.intersection(wide.index)
-            phase_series.loc[mask_idx] = marker_y.reindex(mask_idx)
-            wide[phase_col] = phase_series
-            phase_specs.append(
-                SeriesSpec(
-                    y=phase_col,
-                    x=phase_x_col if use_offset else None,
-                    label=f"FL {phase} - {point}",
-                    kind="scatter",
-                    marker="triangle-up",
-                    color=phase_colors.get(phase, "#e74c3c"),
-                    marker_line_color="#ffffff" if phase == "Iridescencia" else None,
-                    marker_line_width=1.5 if phase == "Iridescencia" else None,
-                    axis="y",
-                )
-            )
-            if use_offset:
-                present = [
-                    p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
-                    if p in point_status.loc[mask_idx, "fl_phase"].astype(str).map(_norm_text).str.cat(sep=" ")
-                ]
-                if phase not in present:
-                    present = [phase]
-                for d in mask_idx:
-                    if d not in wide.index:
-                        continue
-                    phases_here = [
-                        p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
-                        if _norm_text(p) in _norm_text(str(point_status.at[d, "fl_phase"]))
-                    ]
-                    if not phases_here:
-                        phases_here = [phase]
-                    idx = phases_here.index(phase) if phase in phases_here else 0
-                    offset_hours = (idx - (len(phases_here) - 1) / 2) * 36
-                    wide.at[d, phase_x_col] = d + pd.Timedelta(hours=offset_hours)
+        st.session_state["point_index"] = all_points.index(selected_point)
 
-    use_offset = mode == "Individual"
-    status_lists = point_status.apply(_collect_statuses, axis=1)
-    for date_key, statuses in status_lists.items():
-        if not statuses:
-            continue
-        if not use_offset:
-            statuses = statuses[:1]
-        total = len(statuses)
-        for idx, status in enumerate(statuses):
-            if _norm_text(status) == "seco" and date_key in dry_dates:
+        if "show_params_single" not in st.session_state:
+            st.session_state["show_params_single"] = False
+        if sel_cols[1].button("Adicionar parametros", use_container_width=True):
+            st.session_state["show_params_single"] = not st.session_state["show_params_single"]
+
+        nav_cols = st.columns([1, 1, 8], gap="small")
+        if nav_cols[0].button("- Anterior", use_container_width=True, key="prev_point"):
+            st.session_state["point_index"] = max(0, st.session_state["point_index"] - 1)
+            st.rerun()
+        if nav_cols[1].button("+ Proximo", use_container_width=True, key="next_point"):
+            st.session_state["point_index"] = min(len(all_points) - 1, st.session_state["point_index"] + 1)
+            st.rerun()
+
+        if st.session_state["show_params_single"]:
+            selected_params = st.multiselect(
+                "Parametros do grafico",
+                param_options,
+                default=["NA"],
+                key="single_params",
+            )
+        else:
+            selected_params = ["NA"]
+
+        selected_points = [selected_point]
+    else:
+        if "multi_points" not in st.session_state:
+            st.session_state["multi_points"] = []
+        st.session_state["multi_points"] = [
+            p for p in st.session_state["multi_points"] if p in all_points
+        ]
+
+        available_points = [p for p in all_points if p not in st.session_state["multi_points"]]
+        if available_points:
+            add_cols = st.columns([5, 2], gap="small")
+            to_add = add_cols[0].selectbox("Adicionar poco", available_points, key="multi_add")
+            if add_cols[1].button("Adicionar", use_container_width=True):
+                st.session_state["multi_points"].append(to_add)
+                st.rerun()
+        else:
+            st.info("Todos os pocos do tipo selecionado ja foram adicionados.")
+
+        if st.session_state["multi_points"]:
+            st.caption("Pocos selecionados:")
+            for point in st.session_state["multi_points"]:
+                row = st.columns([6, 1], gap="small")
+                row[0].write(point)
+                if row[1].button("X", key=f"rm_{point}"):
+                    st.session_state["multi_points"] = [
+                        p for p in st.session_state["multi_points"] if p != point
+                    ]
+                    st.rerun()
+
+        selected_params = st.multiselect(
+            "Parametros do grafico",
+            param_options,
+            default=["NA"],
+            key="multi_params",
+        )
+
+        selected_points = list(st.session_state["multi_points"])
+
+    if "NA" not in selected_params:
+        selected_params = ["NA"] + selected_params
+
+    if not selected_points:
+        st.info("Selecione ao menos um poco para visualizar.")
+        st.stop()
+
+    wide, na_flat = build_point_series(vb, na, selected_points)
+
+    if "Data" not in wide.columns and "index" in wide.columns:
+        wide = wide.rename(columns={"index": "Data"})
+    if "Data" not in wide.columns:
+        st.info("Sem dados de data para os pocos selecionados.")
+        st.stop()
+    wide = wide.set_index("Data")
+
+    if mode == "Poco individual":
+        phase_colors = {
+            "Odor": "#f1c40f",
+            "Oleoso": "#f39c12",
+            "Iridescencia": "#fff2a8",
+            "Pelicula": "#e74c3c",
+        }
+        na_palette = [
+            "rgba(46, 139, 87, 0.6)",
+            "rgba(40, 161, 152, 0.6)",
+            "rgba(35, 139, 214, 0.6)",
+            "rgba(58, 105, 214, 0.6)",
+            "rgba(94, 88, 214, 0.6)",
+        ]
+        na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
+        fl_bar_color = "rgba(214, 39, 40, 0.6)"
+        air_fill = "rgba(0, 0, 0, 0)"
+        air_line = "rgba(180, 180, 180, 0.7)"
+        water_tail_color = "rgba(30, 90, 150, 0.8)"
+        water_fade_mid = "rgba(30, 90, 150, 0.45)"
+        water_fade_low = "rgba(30, 90, 150, 0.15)"
+        dry_marker_color = "rgba(220, 80, 80, 0.9)"
+        vb_palette = [
+            "#ffcc00",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#bcbd22",
+        ]
+        vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
+        status_marker_color = "rgba(130, 130, 130, 0.8)"
+
+        phase_specs: list[SeriesSpec] = []
+        status_specs: list[SeriesSpec] = []
+        use_offset = True
+
+        for point in selected_points:
+            na_val_col = f"na_val__{point}"
+            no_val_col = f"no_val__{point}"
+            fl_val_col = f"fl_num__{point}"
+
+            point_status = na_flat[na_flat["entity_key"] == point]
+            has_dry = not point_status.empty and point_status["dry_depth"].notna().any()
+            if na_val_col not in wide.columns and no_val_col not in wide.columns and not has_dry:
                 continue
-            col_key = f"status__{point}__{_slug_status(status)}"
-            x_col = f"x__{col_key}"
-            if col_key not in wide.columns:
-                wide[col_key] = pd.NA
-                if use_offset:
-                    wide[x_col] = wide.index
-                norm_status = _norm_text(status)
-                marker = "square"
-                color = status_marker_color
-                line_color = None
-                line_width = None
-                if "iridescen" in norm_status:
-                    marker = "triangle-up"
-                    color = "#fff2a8"
-                    line_color = "#ffffff"
-                    line_width = 1.5
+
+            na_vals = wide[na_val_col] if na_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+            no_vals = wide[no_val_col] if no_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+            fl_vals = wide[fl_val_col] if fl_val_col in wide.columns else pd.Series(pd.NA, index=wide.index)
+
+            if point_status.empty:
+                continue
+            point_status = point_status.set_index("Data")
+
+            dry_dates = point_status.index[point_status["dry_depth"].notna()]
+            if len(dry_dates) > 0:
+                na_vals = na_vals.copy()
+                no_vals = no_vals.copy()
+                na_vals.loc[dry_dates.intersection(na_vals.index)] = pd.NA
+                no_vals.loc[dry_dates.intersection(no_vals.index)] = pd.NA
+
+            pump_mask = point_status["obs_status"].astype(str).map(_norm_text).str.contains("abaix")
+            pump_dates = point_status.index[pump_mask]
+
+            air_len = no_vals.where(no_vals.notna(), pd.NA)
+            air_len = air_len.where(air_len.notna(), na_vals.where(na_vals.notna(), pd.NA))
+            if len(dry_dates) > 0:
+                air_len.loc[dry_dates.intersection(air_len.index)] = point_status.loc[
+                    dry_dates.intersection(point_status.index),
+                    "dry_depth",
+                ]
+            has_na = na_vals.notna()
+            has_no = no_vals.notna()
+            has_fl = fl_vals.notna()
+            fl_len = fl_vals.where(has_fl, pd.NA)
+            fl_len = fl_len.where(fl_len.notna(), (na_vals - no_vals))
+            fl_len = fl_len.where(has_na & (has_no | has_fl), pd.NA)
+            fl_len = fl_len.where(fl_len > 0, pd.NA)
+            water_top_len = pd.Series(0.12, index=wide.index).where(na_vals.notna(), pd.NA)
+            water_mid_len = pd.Series(0.08, index=wide.index).where(na_vals.notna(), pd.NA)
+            water_low_len = pd.Series(0.05, index=wide.index).where(na_vals.notna(), pd.NA)
+
+            if len(pump_dates) > 0:
+                for d in pump_dates:
+                    if d in wide.index:
+                        water_top_len.loc[d] = pd.NA
+                        water_mid_len.loc[d] = pd.NA
+                        water_low_len.loc[d] = pd.NA
+
+            air_col = f"air__{point}"
+            fl_seg_col = f"fl_seg__{point}"
+            fl_base_col = f"fl_base__{point}"
+            water_top_col = f"water_top__{point}"
+            water_mid_col = f"water_mid__{point}"
+            water_low_col = f"water_low__{point}"
+            dry_col = f"dry__{point}"
+            pump_col = f"pump__{point}"
+            pump_missing_col = f"pump_missing__{point}"
+
+            wide[air_col] = air_len
+            wide[fl_seg_col] = fl_len
+            fl_base_vals = no_vals.where(has_no, pd.NA)
+            fl_base_vals = fl_base_vals.where(fl_base_vals.notna(), (na_vals - fl_len))
+            wide[fl_base_col] = fl_base_vals
+            wide[water_top_col] = water_top_len
+            wide[water_mid_col] = water_mid_len
+            wide[water_low_col] = water_low_len
+            if len(dry_dates) > 0:
+                wide[dry_col] = pd.NA
+                for d in dry_dates:
+                    if d in wide.index:
+                        wide.at[d, dry_col] = point_status.at[d, "dry_depth"]
+            if len(pump_dates) > 0:
+                wide[pump_col] = pd.NA
+                wide[pump_missing_col] = pd.NA
+                for d in pump_dates:
+                    if d in wide.index:
+                        if pd.notna(na_vals.get(d, pd.NA)):
+                            wide.at[d, pump_col] = na_vals.get(d, pd.NA)
+                        else:
+                            wide.at[d, pump_missing_col] = 0.08
+                            wide.at[d, pump_col] = 0.12
+
+            base_vals = na_vals
+            if base_vals.notna().any():
+                span = float(base_vals.max() - base_vals.min())
+            else:
+                span = 1.0
+            offset = max(0.05, span * 0.03)
+
+            marker_y = base_vals.where(base_vals.notna(), 0) - offset
+
+            for phase in ("Odor", "Oleoso", "Iridescencia", "Pelicula"):
+                phase_col = f"fl_phase__{point}__{phase}"
+                phase_x_col = f"x__{phase_col}"
+                phase_series = pd.Series(pd.NA, index=wide.index)
+                mask = (
+                    point_status["fl_phase"]
+                    .astype(str)
+                    .map(_norm_text)
+                    .str.contains(_norm_text(phase), regex=False)
+                )
+                if mask.any():
+                    mask_idx = mask[mask].index.intersection(wide.index)
+                    phase_series.loc[mask_idx] = marker_y.reindex(mask_idx)
+                    wide[phase_col] = phase_series
+                    phase_specs.append(
+                        SeriesSpec(
+                            y=phase_col,
+                            x=phase_x_col if use_offset else None,
+                            label=f"FL {phase} - {point}",
+                            kind="scatter",
+                            marker="triangle-up",
+                            color=phase_colors.get(phase, "#e74c3c"),
+                            marker_line_color="#ffffff" if phase == "Iridescencia" else None,
+                            marker_line_width=1.5 if phase == "Iridescencia" else None,
+                            axis="y",
+                        )
+                    )
+                    if use_offset:
+                        for d in mask_idx:
+                            if d not in wide.index:
+                                continue
+                            phases_here = [
+                                p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
+                                if _norm_text(p) in _norm_text(str(point_status.at[d, "fl_phase"]))
+                            ]
+                            if not phases_here:
+                                phases_here = [phase]
+                            idx = phases_here.index(phase) if phase in phases_here else 0
+                            offset_hours = (idx - (len(phases_here) - 1) / 2) * 36
+                            wide.at[d, phase_x_col] = d + pd.Timedelta(hours=offset_hours)
+
+            status_lists = point_status.apply(_collect_statuses, axis=1)
+            for date_key, statuses in status_lists.items():
+                if not statuses:
+                    continue
+                total = len(statuses)
+                for idx, status in enumerate(statuses):
+                    if _norm_text(status) == "seco" and date_key in dry_dates:
+                        continue
+                    col_key = f"status__{point}__{_slug_status(status)}"
+                    x_col = f"x__{col_key}"
+                    if col_key not in wide.columns:
+                        wide[col_key] = pd.NA
+                        if use_offset:
+                            wide[x_col] = wide.index
+                        norm_status = _norm_text(status)
+                        marker = "square"
+                        color = status_marker_color
+                        line_color = None
+                        line_width = None
+                        if "iridescen" in norm_status:
+                            marker = "triangle-up"
+                            color = "#fff2a8"
+                            line_color = "#ffffff"
+                            line_width = 1.5
+                        status_specs.append(
+                            SeriesSpec(
+                                y=col_key,
+                                x=x_col if use_offset else None,
+                                label=f"{status} - {point}",
+                                kind="scatter",
+                                marker=marker,
+                                color=color,
+                                marker_line_color=line_color,
+                                marker_line_width=line_width,
+                                axis="y",
+                            )
+                        )
+                    if date_key in wide.index:
+                        wide.at[date_key, col_key] = marker_y.get(date_key, offset)
+                        if use_offset and total > 1:
+                            offset_hours = (idx - (total - 1) / 2) * 36
+                            wide.at[date_key, x_col] = date_key + pd.Timedelta(hours=offset_hours)
+
+            if dry_col in wide.columns and wide[dry_col].notna().any():
                 status_specs.append(
                     SeriesSpec(
-                        y=col_key,
-                        x=x_col if use_offset else None,
-                        label=f"{status} - {point}",
+                        y=dry_col,
+                        label=f"Seco - {point}",
                         kind="scatter",
-                        marker=marker,
-                        color=color,
-                        marker_line_color=line_color,
-                        marker_line_width=line_width,
+                        marker="x",
+                        color=dry_marker_color,
                         axis="y",
                     )
                 )
-            if date_key in wide.index:
-                wide.at[date_key, col_key] = marker_y.get(date_key, offset)
-                if use_offset and total > 1:
-                    offset_hours = (idx - (total - 1) / 2) * 36
-                    wide.at[date_key, x_col] = date_key + pd.Timedelta(hours=offset_hours)
+            if pump_col in wide.columns and wide[pump_col].notna().any():
+                status_specs.append(
+                    SeriesSpec(
+                        y=pump_col,
+                        label=f"Abaixar bomba - {point}",
+                        kind="scatter",
+                        marker="square",
+                        color="rgba(255, 255, 255, 0.9)",
+                        axis="y",
+                    )
+                )
+            if pump_missing_col in wide.columns and wide[pump_missing_col].notna().any():
+                status_specs.append(
+                    SeriesSpec(
+                        y=pump_missing_col,
+                        label=f"Nao medido - {point}",
+                        kind="bar",
+                        color="rgba(170, 170, 170, 0.7)",
+                        axis="y",
+                    )
+                )
 
-    if dry_col in wide.columns and wide[dry_col].notna().any():
-        status_specs.append(
-            SeriesSpec(
-                y=dry_col,
-                label=f"Seco - {point}",
-                kind="scatter",
-                marker="x",
-                color=dry_marker_color,
-                axis="y",
+        wide = wide.reset_index()
+
+        air_series: list[SeriesSpec] = []
+        fl_series: list[SeriesSpec] = []
+        water_series: list[SeriesSpec] = []
+        line_series: list[SeriesSpec] = []
+        for point in selected_points:
+            col_air = f"air__{point}"
+            if col_air in wide.columns:
+                air_series.append(
+                    SeriesSpec(
+                        y=col_air,
+                        label=f"Ar (m) - {point}",
+                        kind="bar",
+                        color=air_fill,
+                        axis="y",
+                    )
+                )
+            col_fl = f"fl_seg__{point}"
+            if col_fl in wide.columns:
+                fl_series.append(
+                    SeriesSpec(
+                        y=col_fl,
+                        label=f"Fase livre (m) - {point}",
+                        kind="bar",
+                        color=fl_bar_color,
+                        axis="y",
+                    )
+                )
+            col_water_top = f"water_top__{point}"
+            if col_water_top in wide.columns:
+                water_series.append(
+                    SeriesSpec(
+                        y=col_water_top,
+                        label=f"Agua (m) - {point}",
+                        kind="bar",
+                        color=water_tail_color,
+                        axis="y",
+                    )
+                )
+            col_water_mid = f"water_mid__{point}"
+            if col_water_mid in wide.columns:
+                water_series.append(
+                    SeriesSpec(
+                        y=col_water_mid,
+                        label=f"Agua (fade) - {point}",
+                        kind="bar",
+                        color=water_fade_mid,
+                        axis="y",
+                    )
+                )
+            col_water_low = f"water_low__{point}"
+            if col_water_low in wide.columns:
+                water_series.append(
+                    SeriesSpec(
+                        y=col_water_low,
+                        label=f"Agua (fade2) - {point}",
+                        kind="bar",
+                        color=water_fade_low,
+                        axis="y",
+                    )
+                )
+            col_vb = f"bombeado__{point}"
+            if col_vb in wide.columns:
+                vb_color = vb_color_map.get(point, vb_palette[0])
+                line_series.append(
+                    SeriesSpec(
+                        y=col_vb,
+                        label=f"Volume Bombeado - {point}",
+                        kind="line",
+                        marker="circle",
+                        color=vb_color,
+                        axis="y2",
+                    )
+                )
+
+        series = air_series + fl_series + water_series + line_series
+
+        series.extend(phase_specs)
+        series.extend(status_specs)
+
+        if not series:
+            st.info("Sem dados de NA, status ou volume bombeado para os pocos selecionados.")
+            st.stop()
+
+        title_suffix = ""
+        if len(selected_points) == 1 and not na_flat.empty:
+            point_key = selected_points[0]
+            status_series = (
+                na_flat[na_flat["entity_key"] == point_key]
+                .sort_values("Data")["obs_status"]
+                .dropna()
             )
-        )
-    if pump_col in wide.columns and wide[pump_col].notna().any():
-        status_specs.append(
-            SeriesSpec(
-                y=pump_col,
-                label=f"Abaixar bomba - {point}",
-                kind="scatter",
-                marker="square",
-                color="rgba(255, 255, 255, 0.9)",
-                axis="y",
-            )
-        )
-    if pump_missing_col in wide.columns and wide[pump_missing_col].notna().any():
-        status_specs.append(
-            SeriesSpec(
-                y=pump_missing_col,
-                label=f"Nao medido - {point}",
-                kind="bar",
-                color="rgba(170, 170, 170, 0.7)",
-                axis="y",
-            )
-        )
+            if not status_series.empty:
+                title_suffix = f" ({status_series.iloc[-1]})"
 
-wide = wide.reset_index()
-
-air_series: list[SeriesSpec] = []
-fl_series: list[SeriesSpec] = []
-water_series: list[SeriesSpec] = []
-line_series: list[SeriesSpec] = []
-for point in selected_points:
-    col_air = f"air__{point}"
-    if col_air in wide.columns:
-        air_series.append(
-            SeriesSpec(
-                y=col_air,
-                label=f"Ar (m) - {point}",
-                kind="bar",
-                color=air_fill,
-                axis="y",
-            )
+        fig2, _ = build_time_chart_plotly(
+            wide,
+            x="Data",
+            series=series,
+            title=f"NA por ponto{title_suffix}",
+            show_range_slider=False,
+            limit_points=200000,
+            return_insights=False,
         )
-    col_fl = f"fl_seg__{point}"
-    if col_fl in wide.columns:
-        fl_series.append(
-            SeriesSpec(
-                y=col_fl,
-                label=f"Fase livre (m) - {point}",
-                kind="bar",
-                color=fl_bar_color,
-                axis="y",
-            )
-        )
-    col_water_top = f"water_top__{point}"
-    if col_water_top in wide.columns:
-        water_series.append(
-            SeriesSpec(
-                y=col_water_top,
-                label=f"Agua (m) - {point}",
-                kind="bar",
-                color=water_tail_color,
-                axis="y",
-            )
-        )
-    col_water_mid = f"water_mid__{point}"
-    if col_water_mid in wide.columns:
-        water_series.append(
-            SeriesSpec(
-                y=col_water_mid,
-                label=f"Agua (fade) - {point}",
-                kind="bar",
-                color=water_fade_mid,
-                axis="y",
-            )
-        )
-    col_water_low = f"water_low__{point}"
-    if col_water_low in wide.columns:
-        water_series.append(
-            SeriesSpec(
-                y=col_water_low,
-                label=f"Agua (fade2) - {point}",
-                kind="bar",
-                color=water_fade_low,
-                axis="y",
-            )
-        )
-    col_vb = f"bombeado__{point}"
-    if col_vb in wide.columns:
-        vb_color = vb_color_map.get(point, vb_palette[0])
-        line_series.append(
-            SeriesSpec(
-                y=col_vb,
-                label=f"Volume Bombeado - {point}",
-                kind="line",
-                marker="circle",
-                color=vb_color,
-                axis="y2",
-            )
-        )
+        fig2.update_layout(barmode="group", bargap=0.0, bargroupgap=0.05)
 
-series = air_series + fl_series + water_series + line_series
+        for trace in fig2.data:
+            if getattr(trace, "type", None) != "bar":
+                continue
+            if not trace.name or " - " not in trace.name:
+                continue
+            label, point = trace.name.split(" - ", 1)
+            trace.offsetgroup = point
+            trace.alignmentgroup = point
+            if label.startswith("Fase livre"):
+                base_col = f"fl_base__{point}"
+                if base_col in wide.columns:
+                    trace.base = wide[base_col].tolist()
+            if label.startswith("Agua"):
+                base_col = f"na_val__{point}"
+                base_series = wide[base_col] if base_col in wide.columns else pd.Series(0, index=wide.index)
+                trace.base = base_series.tolist()
+                if label.startswith("Agua (fade)"):
+                    fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).tolist()
+                    trace.base = fade_base
+                if label.startswith("Agua (fade2)"):
+                    fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).add(
+                        wide.get(f"water_mid__{point}", 0)
+                    ).tolist()
+                    trace.base = fade_base
+            if label.startswith("Ar"):
+                trace.marker.line = dict(color=air_line, width=1.6)
+                trace.marker.color = "rgba(0, 0, 0, 0)"
 
-series.extend(phase_specs)
-series.extend(status_specs)
+            if label.startswith("Fase livre"):
+                vals = trace.y
+                trace.text = [
+                    f"{v:.2f}" if isinstance(v, (int, float)) and pd.notna(v) else ""
+                    for v in vals
+                ]
+                trace.textposition = "inside"
+                trace.textfont = dict(color="#ffffff", size=10)
 
-if not series:
-    st.info("Sem dados de NA, status ou volume bombeado para os pontos selecionados.")
-    st.stop()
+        for trace in fig2.data:
+            if not getattr(trace, "name", ""):
+                continue
+            if trace.name.startswith("Agua (fade)"):
+                trace.showlegend = False
+            if trace.name.startswith("Agua (fade2)"):
+                trace.showlegend = False
 
-title_suffix = ""
-if len(selected_points) == 1 and not na_flat.empty:
-    point_key = selected_points[0]
-    status_series = (
-        na_flat[na_flat["entity_key"] == point_key]
-        .sort_values("Data")["obs_status"]
-        .dropna()
-    )
-    if not status_series.empty:
-        title_suffix = f" ({status_series.iloc[-1]})"
+        bar_width = 1000 * 60 * 60 * 24 * 3
+        fig2.update_traces(width=bar_width, selector=dict(type="bar"))
+        fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
+        fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-fig2, _ = build_time_chart_plotly(
-    wide,
-    x="Data",
-    series=series,
-    title=f"NA por ponto{title_suffix}",
-    show_range_slider=False,
-    limit_points=200000,
-    return_insights=False,
-)
-fig2.update_layout(barmode="group", bargap=0.0, bargroupgap=0.05)
-
-for trace in fig2.data:
-    if getattr(trace, "type", None) != "bar":
-        continue
-    if not trace.name or " - " not in trace.name:
-        continue
-    label, point = trace.name.split(" - ", 1)
-    trace.offsetgroup = point
-    trace.alignmentgroup = point
-    if label.startswith("Fase livre"):
-        base_col = f"fl_base__{point}"
-        if base_col in wide.columns:
-            trace.base = wide[base_col].tolist()
-    if label.startswith("Agua"):
-        base_col = f"na_val__{point}"
-        base_series = wide[base_col] if base_col in wide.columns else pd.Series(0, index=wide.index)
-        trace.base = base_series.tolist()
-        if label.startswith("Agua (fade)"):
-            fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).tolist()
-            trace.base = fade_base
-        if label.startswith("Agua (fade2)"):
-            fade_base = base_series.add(wide.get(f"water_top__{point}", 0)).add(
-                wide.get(f"water_mid__{point}", 0)
-            ).tolist()
-            trace.base = fade_base
-    if label.startswith("Ar"):
-        trace.marker.line = dict(color=air_line, width=1.6)
-        trace.marker.color = "rgba(0, 0, 0, 0)"
-
-    if label.startswith("Fase livre"):
-        vals = trace.y
-        trace.text = [
-            f"{v:.2f}" if isinstance(v, (int, float)) and pd.notna(v) else ""
-            for v in vals
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        phase_colors = {
+            "Odor": "#f1c40f",
+            "Oleoso": "#f39c12",
+            "Iridescencia": "#fff2a8",
+            "Pelicula": "#e74c3c",
+        }
+        na_palette = [
+            "rgba(46, 139, 87, 0.8)",
+            "rgba(40, 161, 152, 0.8)",
+            "rgba(35, 139, 214, 0.8)",
+            "rgba(58, 105, 214, 0.8)",
+            "rgba(94, 88, 214, 0.8)",
         ]
-        trace.textposition = "inside"
-        trace.textfont = dict(color="#ffffff", size=10)
+        vb_palette = [
+            "#ffcc00",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#bcbd22",
+        ]
+        na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
+        vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
+        status_marker_color = "rgba(130, 130, 130, 0.85)"
+        dry_marker_color = "rgba(220, 80, 80, 0.9)"
 
-seen_tail = set()
-for trace in fig2.data:
-    if not getattr(trace, "name", ""):
-        continue
-    if trace.name.startswith("Agua (fade)"):
-        trace.showlegend = False
-    if trace.name.startswith("Agua (fade2)"):
-        trace.showlegend = False
+        def _display_status_label(status: str) -> str:
+            norm = _norm_text(status)
+            if norm in {"nao medido", "naeo medido", "n m", "nm"}:
+                return "Nao medido"
+            return status
 
-bar_width = 1000 * 60 * 60 * 24 * 3
-fig2.update_traces(width=bar_width, selector=dict(type="bar"))
-fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
-fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
+        series: list[SeriesSpec] = []
+        phase_specs: list[SeriesSpec] = []
+        status_specs: list[SeriesSpec] = []
 
-st.plotly_chart(fig2, use_container_width=True)
+        if "NA" in selected_params:
+            for point in selected_points:
+                na_val_col = f"na_val__{point}"
+                if na_val_col not in wide.columns:
+                    na_val_col = f"na_base__{point}"
+                if na_val_col in wide.columns:
+                    series.append(
+                    SeriesSpec(
+                        y=na_val_col,
+                        label=f"NA - {point}",
+                        kind="line",
+                        marker="circle",
+                        color=na_color_map.get(point, na_palette[0]),
+                        axis="y",
+                        connect_gaps=True,
+                    )
+                    )
 
-if "In Situ" in df_dict:
-    st.subheader("In Situ (por ponto)")
-    in_situ = prep_in_situ(df_dict["In Situ"])
-    if "Data" not in in_situ.columns or "Ponto" not in in_situ.columns:
-        st.info("Planilha In Situ nao tem colunas suficientes para grafico.")
-        st.stop()
+        if "Volume bombeado" in selected_params:
+            for point in selected_points:
+                col_vb = f"bombeado__{point}"
+                if col_vb in wide.columns:
+                    series.append(
+                        SeriesSpec(
+                            y=col_vb,
+                            label=f"Volume Bombeado - {point}",
+                            kind="bar",
+                            color=vb_color_map.get(point, vb_palette[0]),
+                            axis="y2",
+                        )
+                    )
 
-    points_is = sorted(in_situ["Ponto"].dropna().unique())
-    params_is = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+        if "NA" in selected_params and not na_flat.empty:
+            for point in selected_points:
+                na_val_col = f"na_val__{point}"
+                if na_val_col not in wide.columns:
+                    na_val_col = f"na_base__{point}"
+                if na_val_col not in wide.columns:
+                    continue
 
-    if not points_is or not params_is:
-        st.info("Nao ha dados suficientes em In Situ para visualizar.")
-        st.stop()
+                point_status = na_flat[na_flat["entity_key"] == point]
+                if point_status.empty:
+                    continue
+                point_status = point_status.set_index("Data")
 
-    sel_points_is = st.multiselect("Pontos (In Situ)", points_is, default=points_is)
-    sel_params_is = st.multiselect("Parametros (In Situ)", params_is, default=params_is[:1])
+                base_vals = wide[na_val_col]
+                if base_vals.notna().any():
+                    span = float(base_vals.max() - base_vals.min())
+                else:
+                    span = 1.0
+                offset = max(0.05, span * 0.03)
+                marker_y = base_vals.where(base_vals.notna(), pd.NA) - offset
 
-    if not sel_points_is or not sel_params_is:
-        st.info("Selecione ao menos um ponto e um parametro.")
-        st.stop()
+                for phase in ("Odor", "Oleoso", "Iridescencia", "Pelicula"):
+                    phase_col = f"fl_phase__{point}__{phase}"
+                    phase_series = pd.Series(pd.NA, index=wide.index)
+                    mask = (
+                        point_status["fl_phase"]
+                        .astype(str)
+                        .map(_norm_text)
+                        .str.contains(_norm_text(phase), regex=False)
+                    )
+                    if not mask.any():
+                        continue
+                    mask_idx = mask[mask].index.intersection(wide.index)
+                    phase_series.loc[mask_idx] = marker_y.reindex(mask_idx)
+                    wide[phase_col] = phase_series
+                    phase_specs.append(
+                        SeriesSpec(
+                            y=phase_col,
+                            label=f"FL {phase} - {point}",
+                            kind="scatter",
+                            marker="triangle-up",
+                            color=phase_colors.get(phase, "#e74c3c"),
+                            marker_line_color="#ffffff" if phase == "Iridescencia" else None,
+                            marker_line_width=1.5 if phase == "Iridescencia" else None,
+                            axis="y",
+                        )
+                    )
 
-    subset = in_situ[in_situ["Ponto"].isin(sel_points_is)].copy()
-    long_is = subset.melt(
-        id_vars=["Data", "Ponto"],
-        value_vars=sel_params_is,
-        var_name="param",
-        value_name="valor",
-    )
-    long_is = long_is.dropna(subset=["valor"])
-    if long_is.empty:
-        st.info("Nao ha valores para os filtros selecionados.")
-        st.stop()
+                status_lists = point_status.apply(_collect_statuses, axis=1)
+                for date_key, statuses in status_lists.items():
+                    if not statuses:
+                        obs = point_status.at[date_key, "obs_status"] if date_key in point_status.index else pd.NA
+                        if (
+                            isinstance(obs, str)
+                            and "abaix" in _norm_text(obs)
+                            and pd.isna(base_vals.get(date_key, pd.NA))
+                        ):
+                            statuses = ["Nao medido"]
+                        else:
+                            continue
+                    statuses = statuses[:1]
+                    for status in statuses:
+                        if _norm_text(status) == "seco":
+                            continue
+                        label = _display_status_label(status)
+                        col_key = f"status__{point}__{_slug_status(label)}"
+                        if col_key not in wide.columns:
+                            wide[col_key] = pd.NA
+                            norm_status = _norm_text(label)
+                            marker = "square"
+                            color = status_marker_color
+                            line_color = None
+                            line_width = None
+                            if "iridescen" in norm_status:
+                                marker = "triangle-up"
+                                color = "#fff2a8"
+                                line_color = "#ffffff"
+                                line_width = 1.5
+                            status_specs.append(
+                                SeriesSpec(
+                                    y=col_key,
+                                    label=f"{label} - {point}",
+                                    kind="scatter",
+                                    marker=marker,
+                                    color=color,
+                                    marker_line_color=line_color,
+                                    marker_line_width=line_width,
+                                    axis="y",
+                                )
+                            )
+                        if date_key in wide.index:
+                            wide.at[date_key, col_key] = marker_y.get(date_key, offset)
 
-    long_is["serie"] = long_is["param"].astype(str) + " - " + long_is["Ponto"].astype(str)
-    wide_is = (
-        long_is.pivot_table(index="Data", columns="serie", values="valor", aggfunc="mean")
-        .reset_index()
-    )
+                if point_status["dry_depth"].notna().any():
+                    dry_col = f"dry__{point}"
+                    wide[dry_col] = pd.NA
+                    dry_dates = point_status.index[point_status["dry_depth"].notna()]
+                    for d in dry_dates:
+                        if d in wide.index:
+                            wide.at[d, dry_col] = point_status.at[d, "dry_depth"]
+                    status_specs.append(
+                        SeriesSpec(
+                            y=dry_col,
+                            label=f"Seco - {point}",
+                            kind="scatter",
+                            marker="x",
+                            color=dry_marker_color,
+                            axis="y",
+                        )
+                    )
 
-    series_is = [
-        SeriesSpec(
-            y=col,
-            label=col,
-            kind="line",
-            marker="circle",
-            axis="y",
+        wide = wide.reset_index()
+        series.extend(phase_specs)
+        series.extend(status_specs)
+
+        if not series:
+            st.info("Sem dados suficientes para os pocos selecionados.")
+            st.stop()
+
+        fig2, _ = build_time_chart_plotly(
+            wide,
+            x="Data",
+            series=series,
+            title="NA por poco",
+            show_range_slider=False,
+            limit_points=200000,
+            return_insights=False,
         )
-        for col in wide_is.columns
-        if col != "Data"
-    ]
+        fig2.update_layout(barmode="group", bargap=0.0, bargroupgap=0.05)
+        fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
+        if any(s.axis == "y2" for s in series):
+            fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-    if not series_is:
-        st.info("Nao ha series de In Situ para plotar.")
-        st.stop()
-
-    fig_is, _ = build_time_chart_plotly(
-        wide_is,
-        x="Data",
-        series=series_is,
-        title="In Situ por ponto",
-        show_range_slider=False,
-        limit_points=200000,
-        return_insights=False,
-    )
-    st.plotly_chart(fig_is, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True)

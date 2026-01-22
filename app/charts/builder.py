@@ -44,6 +44,9 @@ class SeriesSpec:
     # Texto extra no hover
     hover_cols: list[str] = field(default_factory=list)
 
+    # Conectar gaps de dados (plotly connectgaps)
+    connect_gaps: Optional[bool] = None
+
 
 def build_time_chart_plotly(
     df: pd.DataFrame,
@@ -286,6 +289,7 @@ def _render_plotly(
                     width=spec.marker_line_width,
                 ) if spec.marker_line_color or spec.marker_line_width else None,
             )
+        connect_gaps = False if spec.connect_gaps is None else spec.connect_gaps
         trace = go.Scatter(
             x=df[x_col],
             y=y_vals,
@@ -296,7 +300,7 @@ def _render_plotly(
             fill=fill,
             customdata=customdata,
             hovertemplate=hovertemplate,
-            connectgaps=False,
+            connectgaps=connect_gaps,
         )
 
         fig.add_trace(trace, secondary_y=(spec.axis == "y2"))
