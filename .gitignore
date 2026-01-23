@@ -19,7 +19,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# secrets / env
+# env/secrets
 .env
 .env.*
 *.pem
@@ -27,6 +27,10 @@ Thumbs.db
 *.pfx
 *.p12
 
-# streamlit secrets (se você usar futuramente)
+# streamlit secrets (se usar futuramente)
 .streamlit/secrets.toml
-.streamlit/credentials.toml
+
+# datasets locais
+*.xlsx
+*.xls
+*.csv
