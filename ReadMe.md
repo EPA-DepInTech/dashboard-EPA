@@ -2,7 +2,7 @@
 
 ![status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
 <!-- ![streamlit](https://img.shields.io/badge/streamlit-1.52.2-red) -->
-![license](https://img.shields.io/badge/licenca-a%20definir-lightgrey)
+![license](https://img.shields.io/badge/licenca-all%20rights%20reserved-blue)
 
 ## Visao geral
 Aplicacao Streamlit para carregamento de planilhas Excel e criacao de graficos customizaveis a partir de dados de monitoramento. O app le multiplas abas, identifica tabelas validas, normaliza colunas e oferece modos de visualizacao temporal ou por pouco/ponto, com tratamento especial para NA/NO/FL e status qualitativos.
