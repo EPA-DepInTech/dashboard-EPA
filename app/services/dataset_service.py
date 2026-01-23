@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import io
+from datetime import date, datetime
 import re
 from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
 from openpyxl import load_workbook
-
-from data.transformer import combine_sheets
 
 
 # =======================
@@ -289,6 +288,343 @@ def clean_basic(df: pd.DataFrame) -> pd.DataFrame:
 # Sheet detection (charts vs table)
 # =======================
 
+def _looks_like_na_param(value: object) -> str | None:
+    if value is None:
+        return None
+    n = _norm(str(value))
+    n = n.replace("(", " ").replace(")", " ")
+    n = re.sub(r"\s+", " ", n).strip()
+    if n in ("na m", "na"):
+        return "NA (m)"
+    if n in ("no m", "no"):
+        return "NO (m)"
+    if n in ("fl m", "fl"):
+        return "FL (m)"
+    return None
+
+
+def _to_float_maybe_units(value: object) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    s = str(value).strip()
+    if not s or s == "-":
+        return None
+
+    s_low = _norm(s)
+    nums = re.findall(r"[-+]?\d+(?:[.,]\d+)?", s_low)
+    if not nums:
+        return None
+
+    num = nums[0].replace(".", "").replace(",", ".") if "," in nums[0] else nums[0]
+    try:
+        v = float(num)
+    except Exception:
+        return None
+
+    # se vier em mS, converte para uS
+    if "ms" in s_low:
+        v *= 1000.0
+    return v
+
+
+def _extract_in_situ_ws(ws) -> pd.DataFrame | None:
+    records: list[dict[str, object]] = []
+    current_point = None
+    current_date = None
+    param_cols: dict[int, str] = {}
+
+    max_row = ws.max_row
+    max_col = ws.max_column
+
+    def _is_date(v: object) -> bool:
+        return isinstance(v, (pd.Timestamp, datetime, date))
+
+    for r in range(1, max_row + 1):
+        b = ws.cell(r, 2).value  # col B
+        c = ws.cell(r, 3).value  # col C
+
+        if isinstance(b, str) and _norm(b) == "data" and isinstance(c, str) and c.strip():
+            current_point = str(c).strip().upper()
+            param_cols = {}
+            continue
+
+        if isinstance(c, str) and _norm(c) == "ph":
+            for col_idx in range(3, max_col + 1):
+                pname = ws.cell(r, col_idx).value
+                if pname is None:
+                    continue
+                pname = str(pname).strip()
+                if pname:
+                    param_cols[col_idx] = pname
+            continue
+
+        if isinstance(c, str) and _norm(c) in {"saida", "saida"}:
+            current_point = "SAIDA"
+            param_cols = {}
+            continue
+
+        if param_cols:
+            if _is_date(b):
+                current_date = b
+
+            if current_date is None or current_point is None:
+                continue
+
+            rec = {"Data": pd.to_datetime(current_date), "Ponto": current_point}
+            has_any = False
+            for col_idx, pname in param_cols.items():
+                v = ws.cell(r, col_idx).value
+                vnum = _to_float_maybe_units(v)
+                if vnum is not None:
+                    has_any = True
+                rec[pname] = vnum
+
+            if has_any:
+                records.append(rec)
+
+    if not records:
+        return None
+
+    df = pd.DataFrame.from_records(records)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["Data"])
+    df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
+    return df
+
+
+def _is_na_semanal_sheet(ws) -> bool:
+    try:
+        row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+        row2 = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))[0]
+    except Exception:
+        return False
+
+    if not row1 or not row2:
+        return False
+
+    first = _norm(str(row1[0])) if row1[0] is not None else ""
+    if "poco" not in first and "ponto" not in first:
+        return False
+
+    params = [
+        _looks_like_na_param(v)
+        for v in row1[1:10]
+        if v is not None
+    ]
+    has_triplet = {p for p in params if p}
+    if not {"NA (m)", "NO (m)", "FL (m)"}.issubset(has_triplet):
+        return False
+
+    parsed_dates = 0
+    for v in row2[1:10]:
+        parsed = pd.to_datetime(v, errors="coerce", dayfirst=True)
+        if pd.notna(parsed):
+            parsed_dates += 1
+    return parsed_dates > 0
+
+
+def _normalize_na_semanal_value(value: object):
+    if value is None or pd.isna(value):
+        return pd.NA
+
+    if isinstance(value, (int, float)):
+        return value
+
+    s = str(value).strip()
+    if s == "":
+        return pd.NA
+
+    n = _norm(s)
+    if n in {"nm", "n m", "nao medido"}:
+        return "Não medido"
+    if n in {"nd", "n d", "nao localizado", "nao localiz"}:
+        return s
+
+    if re.match(r"^[-+]?\d{1,3}(\.\d{3})*(,\d+)?$|^[-+]?\d+([.,]\d+)?$", s):
+        s_num = s.replace(" ", "").replace(".", "").replace(",", ".")
+        try:
+            return float(s_num)
+        except Exception:
+            return s
+
+    return s
+
+def _is_dt(v: object) -> bool:
+    return isinstance(v, (pd.Timestamp, datetime, date))
+
+def _extract_na_semanal_blocks_ws(ws) -> pd.DataFrame | None:
+    """
+    Formato do arquivo (2): blocos lado a lado.
+    Row1: 'ID do poço', <DATA>, ..., (vazio), 'ID do poço', <DATA>, ...
+    Row2: headers: NA (m), NO (m), FL, Status, Observação
+    """
+    try:
+        row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+        row2 = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))[0]
+    except Exception:
+        return None
+
+    if not row1 or not row2:
+        return None
+
+    max_col = max(len(row1), len(row2))
+    row1 = list(row1) + [None] * (max_col - len(row1))
+    row2 = list(row2) + [None] * (max_col - len(row2))
+
+    # achar índices onde começa um bloco ("ID do poço")
+    starts = []
+    for i, v in enumerate(row1):
+        if v is None:
+            continue
+        if _norm(str(v)) in {"id do poco", "id do poço", "poco", "poço"}:
+            # precisa ter data em i+1
+            if i + 1 < max_col and _is_dt(row1[i + 1]):
+                starts.append(i)
+
+    if not starts:
+        return None
+
+    # valida se a linha 2 parece ter NA/NO/FL perto do primeiro bloco
+    i0 = starts[0]
+    h_na = _looks_like_na_param(row2[i0 + 1]) if i0 + 1 < max_col else None
+    h_no = _looks_like_na_param(row2[i0 + 2]) if i0 + 2 < max_col else None
+    if h_na != "NA (m)" or h_no != "NO (m)":
+        # ainda pode ser, mas é um bom sinal de falha
+        pass
+
+    records: list[dict[str, object]] = []
+    empty_streak = 0
+
+    for row in ws.iter_rows(min_row=3, values_only=True):
+        if row is None:
+            continue
+        row_vals = list(row) + [None] * (max_col - len(row))
+
+        # para depois de várias linhas vazias
+        if all(v is None or (isinstance(v, str) and v.strip() == "") for v in row_vals):
+            empty_streak += 1
+            if empty_streak >= 5:
+                break
+            continue
+        empty_streak = 0
+
+        for start in starts:
+            poco = row_vals[start] if start < max_col else None
+            if poco is None or str(poco).strip() == "":
+                continue
+            poco = str(poco).strip()
+
+            dt = row1[start + 1] if start + 1 < max_col else None
+            dt = pd.to_datetime(dt, errors="coerce", dayfirst=True)
+            if pd.isna(dt):
+                continue
+
+            na_v = _normalize_na_semanal_value(row_vals[start + 1])  # NA (m)
+            no_v = _normalize_na_semanal_value(row_vals[start + 2])  # NO (m)
+            fl_v = _normalize_na_semanal_value(row_vals[start + 3])  # FL
+            stt  = row_vals[start + 4] if start + 4 < max_col else None
+            obs  = row_vals[start + 5] if start + 5 < max_col else None
+
+            rec = {
+                "Poco": poco,
+                "Data": dt,
+                "NA (m)": na_v,
+                "NO (m)": no_v,
+                "FL (m)": fl_v,
+            }
+            if stt not in (None, "-", ""):
+                rec["Status"] = str(stt).strip()
+            if obs not in (None, "-", ""):
+                rec["Observação"] = str(obs).strip()
+
+            records.append(rec)
+
+    if not records:
+        return None
+
+    df = pd.DataFrame.from_records(records)
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["Data", "Poco"])
+    df = df.sort_values(["Poco", "Data"]).reset_index(drop=True)
+    return df
+
+
+def _extract_na_semanal_ws(ws) -> pd.DataFrame | None:
+    # ✅ 1) tenta formato BLOCO (arquivo (2))
+    df_block = _extract_na_semanal_blocks_ws(ws)
+    if df_block is not None and not df_block.empty:
+        return df_block
+
+    # ✅ 2) fallback: formato MATRIZ (arquivo (8)) - seu código atual abaixo
+    try:
+        row1 = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+        row2 = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))[0]
+    except Exception:
+        return None
+
+    max_col = max(len(row1), len(row2))
+    row1 = list(row1) + [None] * (max_col - len(row1))
+    row2 = list(row2) + [None] * (max_col - len(row2))
+
+    data_cols: list[tuple[int, str, pd.Timestamp]] = []
+    last_date = None
+    for idx in range(1, max_col):
+        param = _looks_like_na_param(row1[idx])
+        if not param:
+            continue
+
+        raw_date = row2[idx]
+        parsed_date = pd.to_datetime(raw_date, errors="coerce", dayfirst=True)
+        if pd.notna(parsed_date):
+            last_date = parsed_date
+        if last_date is None:
+            continue
+
+        data_cols.append((idx, param, last_date))
+
+    if not data_cols:
+        return None
+
+    records: list[dict[str, object]] = []
+    empty_streak = 0
+    for row in ws.iter_rows(min_row=3, values_only=True):
+        if row is None:
+            continue
+        row_vals = list(row) + [None] * (max_col - len(row))
+        if all(v is None or (isinstance(v, str) and v.strip() == "") for v in row_vals):
+            empty_streak += 1
+            if empty_streak >= 5:
+                break
+            continue
+        empty_streak = 0
+
+        poco = row_vals[0]
+        if poco is None or str(poco).strip() == "":
+            continue
+        poco = str(poco).strip()
+
+        by_date: dict[pd.Timestamp, dict[str, object]] = {}
+        for idx, param, date_val in data_cols:
+            raw_val = row_vals[idx] if idx < len(row_vals) else None
+            val = _normalize_na_semanal_value(raw_val)
+            if date_val not in by_date:
+                by_date[date_val] = {"Poco": poco, "Data": date_val}
+            by_date[date_val][param] = val
+
+        for date_val in sorted(by_date.keys()):
+            rec = by_date[date_val]
+            if any(k in rec for k in ("NA (m)", "NO (m)", "FL (m)")):
+                records.append(rec)
+
+    if not records:
+        return None
+
+    return pd.DataFrame.from_records(records)
+
+
 def _sheet_has_charts(ws) -> bool:
     try:
         return hasattr(ws, "_charts") and ws._charts and len(ws._charts) > 0
@@ -399,130 +735,226 @@ def _extract_table_from_ws(
 # Main entry
 # =======================
 
-def build_master_dataset(sheets_dict):
-    master = combine_sheets(sheets_dict)
-    # aqui você pode chamar parse_result e validators também
-    return master
-
 def build_dataset_from_excel(uploaded_file) -> DatasetResult:
-    if "Histórico" in uploaded_file.name:
-        all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
-        df_dict = {}
+    errors: list[str] = []
+    warnings: list[str] = []
+    skipped: list[SheetSkipInfo] = []
 
-        # Dividindo as páginas do excel (sheets) em múltiplos dataframes
-        df_dict["VOC"] = all_sheets["Resultados A. - SQIS VOC"]
-        df_dict["SVOC"] = all_sheets["Resultados A. - SQIS SVOC"]
-        df_dict["TPHFP"] = all_sheets["Resultados A. - SQIS TPH FP"]
-        df_dict["TPHFR"] = all_sheets["Resultados A. - SQIS TPH FRACIO"]
-        df_dict["MNA"] = all_sheets["Resultados Analíticos - MNA"]
+    try:
+        file_bytes = uploaded_file.getvalue()
+        bio = io.BytesIO(file_bytes)
+    except Exception as e:
+        return DatasetResult(df_dict=None, errors=[f"Falha ao ler bytes do upload: {e}"], warnings=[], skipped=[])
 
-        master = build_master_dataset(df_dict)
+    try:
+        wb = load_workbook(bio, data_only=True, read_only=True)
+    except Exception as e:
+        return DatasetResult(df_dict=None, errors=[f"Falha ao abrir Excel (openpyxl): {e}"], warnings=[], skipped=[])
 
-        return DatasetResult(df_dict=master, errors=[], warnings=[], skipped=[])
-    else:
-        errors: list[str] = []
-        warnings: list[str] = []
-        skipped: list[SheetSkipInfo] = []
+    sheet_names = list(wb.sheetnames)
 
-        try:
-            file_bytes = uploaded_file.getvalue()
-            bio = io.BytesIO(file_bytes)
-        except Exception as e:
-            return DatasetResult(df_dict=None, errors=[f"Falha ao ler bytes do upload: {e}"], warnings=[], skipped=[])
+    # cria mapa "assunto -> aba tabular" para ignorar "Gr?fico X" quando existe a irm? "X"
+    canonical_to_data_sheet: dict[str, str] = {}
+    for s in sheet_names:
+        if not is_chart_sheet_name(s):
+            canon = canonical_sheet_name(s)
+            if canon:
+                canonical_to_data_sheet[canon] = s
 
-        try:
-            wb = load_workbook(bio, data_only=True, read_only=True)
-        except Exception as e:
-            return DatasetResult(df_dict=None, errors=[f"Falha ao abrir Excel (openpyxl): {e}"], warnings=[], skipped=[])
+    df_dict: dict[str, pd.DataFrame] = {}
 
-        sheet_names = list(wb.sheetnames)
+    for sheet_name in sheet_names:
+        ws = wb[sheet_name]
 
-        # cria mapa "assunto -> aba tabular" para ignorar "Gráfico X" quando existe a irmã "X"
-        canonical_to_data_sheet: dict[str, str] = {}
-        for s in sheet_names:
-            if not is_chart_sheet_name(s):
-                canon = canonical_sheet_name(s)
-                if canon:
-                    canonical_to_data_sheet[canon] = s
-
-        df_dict: dict[str, pd.DataFrame] = {}
-
-        for sheet_name in sheet_names:
-            ws = wb[sheet_name]
-
-            has_charts = _sheet_has_charts(ws)
-            non_empty_sample = _count_non_empty_cells_sample(ws)
-
-            # 1) ignora "Gráfico ..." se existe a aba irmã tabular
-            if is_chart_sheet_name(sheet_name):
-                canon = canonical_sheet_name(sheet_name)
-                if canon and canon in canonical_to_data_sheet:
-                    skipped.append(
-                        SheetSkipInfo(
-                            sheet=sheet_name,
-                            reason=f"Aba de gráfico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
-                            has_charts=has_charts,
-                            non_empty_cells_sample=non_empty_sample,
-                        )
-                    )
-                    continue
-
-            # 2) fallback: tem gráfico e pouco conteúdo tabular
-            if has_charts and non_empty_sample < 40:
+        sn = _norm(sheet_name)
+        if sn == "na semanal":
+            df = _extract_na_semanal_ws(ws)
+            if df is None or df.empty:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason="Aba contém gráfico e não parece ter tabela (amostra com pouco conteúdo).",
-                        has_charts=True,
+                        reason="Falha ao interpretar planilha NA semanal.",
+                        has_charts=_sheet_has_charts(ws),
+                        non_empty_cells_sample=_count_non_empty_cells_sample(ws),
+                    )
+                )
+            else:
+                df_dict[sheet_name] = df
+                if "Data" in df.columns:
+                    df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+            continue
+
+        if sn == "in situ":
+            df = _extract_in_situ_ws(ws)
+            if df is None or df.empty:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Falha ao interpretar planilha In Situ.",
+                        has_charts=_sheet_has_charts(ws),
+                        non_empty_cells_sample=_count_non_empty_cells_sample(ws),
+                    )
+                )
+            else:
+                df_dict[sheet_name] = df
+            continue
+
+        if _is_na_semanal_sheet(ws):
+            df = _extract_na_semanal_ws(ws)
+            if df is None or df.empty:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Falha ao interpretar planilha NA semanal.",
+                        has_charts=_sheet_has_charts(ws),
+                        non_empty_cells_sample=_count_non_empty_cells_sample(ws),
+                    )
+                )
+            else:
+                df_dict[sheet_name] = df
+            continue
+
+        has_charts = _sheet_has_charts(ws)
+        non_empty_sample = _count_non_empty_cells_sample(ws)
+
+        # 1) ignora "Gr?fico ..." se existe a aba irm? tabular
+        if is_chart_sheet_name(sheet_name):
+            canon = canonical_sheet_name(sheet_name)
+            if canon and canon in canonical_to_data_sheet:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason=f"Aba de gr?fico ignorada (existe aba tabular correspondente: '{canonical_to_data_sheet[canon]}')",
+                        has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
                 )
                 continue
 
-            # 3) extrai e limpa tabela
-            try:
-                df = _extract_table_from_ws(ws)
-                if df is None:
-                    skipped.append(
-                        SheetSkipInfo(
-                            sheet=sheet_name,
-                            reason="Não foi possível identificar uma tabela na aba.",
-                            has_charts=has_charts,
-                            non_empty_cells_sample=non_empty_sample,
-                        )
-                    )
-                    continue
+        # 2) fallback: tem gr?fico e pouco conte?do tabular
+        if has_charts and non_empty_sample < 40:
+            skipped.append(
+                SheetSkipInfo(
+                    sheet=sheet_name,
+                    reason="Aba cont?m gr?fico e Não parece ter tabela (amostra com pouco conte?do).",
+                    has_charts=True,
+                    non_empty_cells_sample=non_empty_sample,
+                )
+            )
+            continue
 
-                df = clean_basic(df)
-                if df.empty:
-                    skipped.append(
-                        SheetSkipInfo(
-                            sheet=sheet_name,
-                            reason="Tabela extraída ficou vazia após limpeza.",
-                            has_charts=has_charts,
-                            non_empty_cells_sample=non_empty_sample,
-                        )
-                    )
-                    continue
-
-                df_dict[sheet_name] = df
-
-            except Exception as e:
-                warnings.append(f"Erro ao processar a aba '{sheet_name}': {e}")
+        # 3) extrai e limpa tabela
+        try:
+            df = _extract_table_from_ws(ws)
+            if df is None:
                 skipped.append(
                     SheetSkipInfo(
                         sheet=sheet_name,
-                        reason=f"Exceção ao processar: {e}",
+                        reason="Não foi poss?vel identificar uma tabela na aba.",
                         has_charts=has_charts,
                         non_empty_cells_sample=non_empty_sample,
                     )
                 )
+                continue
 
-        if not df_dict:
-            errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
-            return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
+            df = clean_basic(df)
+            if df.empty:
+                skipped.append(
+                    SheetSkipInfo(
+                        sheet=sheet_name,
+                        reason="Tabela extra?da ficou vazia ap?s limpeza.",
+                        has_charts=has_charts,
+                        non_empty_cells_sample=non_empty_sample,
+                    )
+                )
+                continue
 
-        if skipped:
-            warnings.append(f"Foram ignoradas {len(skipped)} abas que não pareciam tabulares (ex.: gráficos).")
+            df_dict[sheet_name] = df
 
-        return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
+        except Exception as e:
+            warnings.append(f"Erro ao processar a aba '{sheet_name}': {e}")
+            skipped.append(
+                SheetSkipInfo(
+                    sheet=sheet_name,
+                    reason=f"Exce??o ao processar: {e}",
+                    has_charts=has_charts,
+                    non_empty_cells_sample=non_empty_sample,
+                )
+            )
+
+    if not df_dict:
+        errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
+        return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
+
+    if skipped:
+        warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gr?ficos).")
+
+    return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
+
+def prep_vol_bombeado(vol_bombeado: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(vol_bombeado, "Data")
+    for c in ["Hidrômetro Manhã", "Hidrômetro Tarde", "Volume Bombeado (m³)"]:
+        if c in df.columns:
+            df[c] = df[c].map(parse_ptbr_number)
+    df["prefix"] = df["Poço"].map(add_prefix)
+    return df
+
+def prep_vol_infiltrado(vol_infiltrado: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(vol_infiltrado, "Data")
+    for c in ["Hidrômetro Manhã", "Hidrômetro Tarde", "Volume Infiltrado"]:
+        if c in df.columns:
+            df[c] = df[c].map(parse_ptbr_number)
+    df["prefix"] = df["Ponto"].map(add_prefix)
+    return df
+
+def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(na_semanal, "Data")
+    for c in ["NA (m)", "NO (m)", "FL (m)"]:
+        if c in df.columns:
+            df[c] = df[c].map(parse_ptbr_number)
+    df["prefix"] = df["Poco"].map(add_prefix)
+    return df
+
+def build_entity_df(entity: str, vb: pd.DataFrame, vi: pd.DataFrame, na: pd.DataFrame) -> pd.DataFrame:
+    """
+    Junta no mesmo DF as colunas possíveis para a entidade selecionada.
+    Nem toda entidade existe nos 3 datasets, então vai entrando só o que tiver.
+    """
+    parts = []
+
+    # vol bombeado por Poço
+    df_vb = vb[(vb["Poço"] == entity) & (vb["Poço"] != "Acumulado")].copy()
+    if not df_vb.empty:
+        df_vb = df_vb.rename(columns={
+            "Hidrômetro Manhã": "bombeado_hm",
+            "Hidrômetro Tarde": "bombeado_ht",
+            "Volume Bombeado (m³)": "bombeado_vol",
+        })
+        parts.append(df_vb[["Data", "bombeado_hm", "bombeado_ht", "bombeado_vol"]])
+
+    # vol infiltrado por Ponto
+    df_vi = vi[(vi["Ponto"] == entity) & (vi["Ponto"] != "Acumulado")].copy()
+    if not df_vi.empty:
+        df_vi = df_vi.rename(columns={
+            "Hidrômetro Manhã": "infiltrado_hm",
+            "Hidrômetro Tarde": "infiltrado_ht",
+            "Volume Infiltrado": "infiltrado_vol",
+        })
+        parts.append(df_vi[["Data", "infiltrado_hm", "infiltrado_ht", "infiltrado_vol"]])
+
+    # NA semanal por Poco
+    df_na = na[na["Poco"] == entity].copy()
+    if not df_na.empty:
+        df_na = df_na.rename(columns={"NA (m)": "na_m"})
+        parts.append(df_na[["Data", "na_m"]])
+
+    if not parts:
+        return pd.DataFrame(columns=["Data"])
+
+    # merge progressivo por Data
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.merge(p, on="Data", how="outer")
+
+    out = out.sort_values("Data")
+    return out

@@ -9,6 +9,9 @@ from services.dataset_service import (
     remove_accumulated_rows,
 )
 
+from charts.builder import SeriesSpec, build_time_chart_plotly
+from services.date_num_prep import parse_ptbr_number, normalize_dates, add_prefix
+
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()
 
@@ -63,14 +66,10 @@ if df_dict is None:
     st.stop()
 
 if isinstance(df_dict, dict):
-    selected = st.selectbox("Tabela:", list(df_dict.keys()))
-    df = df_dict[selected]
-elif isinstance(df_dict, pd.DataFrame):
-    df = df_dict
-    selected = "Campanhas de Monitoramento"
+    st.success(" Excel Operacional Carregado")
 
-st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
-# Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
-df_display = remove_accumulated_rows(df)
-df_display = format_datetime_columns_for_display(df_display)
-st.dataframe(df_display, use_container_width=True)
+    # st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
+    # # Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
+    # df_display = remove_accumulated_rows(df)
+    # df_display = format_datetime_columns_for_display(df_display)
+    # st.dataframe(df_display, use_container_width=True)
