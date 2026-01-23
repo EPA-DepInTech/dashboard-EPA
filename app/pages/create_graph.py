@@ -552,10 +552,10 @@ else:
             st.session_state["show_params_single"] = not st.session_state["show_params_single"]
 
         nav_cols = st.columns([1, 1, 8], gap="small")
-        if nav_cols[0].button("- Anterior", use_container_width=True, key="prev_point"):
+        if nav_cols[0].button("⏪", use_container_width=True, key="prev_point"):
             st.session_state["point_index"] = max(0, st.session_state["point_index"] - 1)
             st.rerun()
-        if nav_cols[1].button("+ Proximo", use_container_width=True, key="next_point"):
+        if nav_cols[1].button("⏩", use_container_width=True, key="next_point"):
             st.session_state["point_index"] = min(len(all_points) - 1, st.session_state["point_index"] + 1)
             st.rerun()
 
@@ -1069,6 +1069,7 @@ else:
         series: list[SeriesSpec] = []
         phase_specs: list[SeriesSpec] = []
         status_specs: list[SeriesSpec] = []
+        use_offset = True
 
         if "NA" in selected_params:
             for point in selected_points:
@@ -1125,6 +1126,7 @@ else:
 
                 for phase in ("Odor", "Oleoso", "Iridescencia", "Pelicula"):
                     phase_col = f"fl_phase__{point}__{phase}"
+                    phase_x_col = f"x__{phase_col}"
                     phase_series = pd.Series(pd.NA, index=wide.index)
                     mask = (
                         point_status["fl_phase"]
@@ -1140,6 +1142,7 @@ else:
                     phase_specs.append(
                         SeriesSpec(
                             y=phase_col,
+                            x=phase_x_col if use_offset else None,
                             label=f"FL {phase} - {point}",
                             kind="scatter",
                             marker="triangle-up",
@@ -1149,6 +1152,19 @@ else:
                             axis="y",
                         )
                     )
+                    if use_offset:
+                        for d in mask_idx:
+                            if d not in wide.index:
+                                continue
+                            phases_here = [
+                                p for p in ("Odor", "Oleoso", "Iridescencia", "Pelicula")
+                                if _norm_text(p) in _norm_text(str(point_status.at[d, "fl_phase"]))
+                            ]
+                            if not phases_here:
+                                phases_here = [phase]
+                            idx = phases_here.index(phase) if phase in phases_here else 0
+                            offset_hours = (idx - (len(phases_here) - 1) / 2) * 36
+                            wide.at[d, phase_x_col] = d + pd.Timedelta(hours=offset_hours)
 
                 status_lists = point_status.apply(_collect_statuses, axis=1)
                 for date_key, statuses in status_lists.items():
@@ -1162,14 +1178,17 @@ else:
                             statuses = ["Nao medido"]
                         else:
                             continue
-                    statuses = statuses[:1]
-                    for status in statuses:
+                    total = len(statuses)
+                    for idx, status in enumerate(statuses):
                         if _norm_text(status) == "seco":
                             continue
                         label = _display_status_label(status)
                         col_key = f"status__{point}__{_slug_status(label)}"
+                        x_col = f"x__{col_key}"
                         if col_key not in wide.columns:
                             wide[col_key] = pd.NA
+                            if use_offset:
+                                wide[x_col] = wide.index
                             norm_status = _norm_text(label)
                             marker = "square"
                             color = status_marker_color
@@ -1183,6 +1202,7 @@ else:
                             status_specs.append(
                                 SeriesSpec(
                                     y=col_key,
+                                    x=x_col if use_offset else None,
                                     label=f"{label} - {point}",
                                     kind="scatter",
                                     marker=marker,
@@ -1194,6 +1214,9 @@ else:
                             )
                         if date_key in wide.index:
                             wide.at[date_key, col_key] = marker_y.get(date_key, offset)
+                            if use_offset and total > 1:
+                                offset_hours = (idx - (total - 1) / 2) * 36
+                                wide.at[date_key, x_col] = date_key + pd.Timedelta(hours=offset_hours)
 
                 if point_status["dry_depth"].notna().any():
                     dry_col = f"dry__{point}"
