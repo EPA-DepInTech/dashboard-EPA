@@ -56,7 +56,7 @@ pip install -r requirements.txt
 
 Inicie o app:
 ```bash
-streamlit run .pppp.py
+streamlit run ./app/app.py
 ```
 
 O app fica disponivel em `http://localhost:8501`.
@@ -67,6 +67,16 @@ O app fica disponivel em `http://localhost:8501`.
 3) Visualize os dados na tabela principal.
 4) Clique em "Criar grafico" para acessar a pagina de graficos.
 5) Selecione colunas de data e poco/ponto, parametros e o tipo de grafico.
+
+## Fluxo de desenvolvimento
+1) Crie uma branch propria de desenvolvimento.
+2) Dê pull da `main`, desenvolva as mudancas e faça push da sua branch.
+3) Quando a mudanca estiver pronta para merge na `main`, rode os testes de lint e pytest localmente:
+```bash
+ruff check . | pytest -q
+```
+4) Se os testes passarem, faça push e abra o Pull Request no GitHub.
+5) O Pull Request precisa ser validado (atualmente por um maintainer do codigo, mas no futuro por mais) e obrigatoriamente passar em todos os checks.
 
 ## Observacoes e dicas
 - Se uma aba nao tiver tabela valida, ela sera ignorada automaticamente.

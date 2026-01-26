@@ -207,7 +207,8 @@ def _render_plotly(
 
         if spec.hover_cols:
             customdata = df[spec.hover_cols].to_numpy()
-            parts = [f"<b>{label}</b><br>", "%{x}<br>", f"{spec.y}: %{y}<br>"]
+            # CORRIGIR ESSA LEGENDA QUE NÃO SEI DAONDE VIRIA ESSE 'Y' <AQUI>
+            parts = [f"<b>{label}</b><br>", "%{x}<br>", f"{spec.y}: %{spec.y}<br>"]
             for i, c in enumerate(spec.hover_cols):
                 parts.append(f"{c}: %{{customdata[{i}]}}<br>")
             parts.append("<extra></extra>")

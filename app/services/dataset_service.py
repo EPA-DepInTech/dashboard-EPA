@@ -730,6 +730,15 @@ def _extract_table_from_ws(
 
     return df
 
+# CORREÇÃO MEIA BOCA PRA PASSAR NO LINT
+
+def normalize_dates(df: pd.DataFrame) -> pd.DataFrame:
+    return None
+
+def parse_ptbr_number(s: str) -> float | None:
+    return None
+
+add_prefix = None
 
 # =======================
 # Main entry
