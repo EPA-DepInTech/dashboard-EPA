@@ -1,16 +1,10 @@
 ﻿# app.py
-import pandas as pd
 import streamlit as st
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
 from services.dataset_service import (
     build_dataset_from_excel,
-    format_datetime_columns_for_display,
-    remove_accumulated_rows,
 )
-
-from charts.builder import SeriesSpec, build_time_chart_plotly
-from services.date_num_prep import parse_ptbr_number, normalize_dates, add_prefix
 
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()
