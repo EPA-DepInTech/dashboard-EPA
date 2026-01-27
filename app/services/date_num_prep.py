@@ -56,16 +56,3 @@ def add_prefix(entity_name: str) -> str:
     return "PONTO"
 
 
-def add_pr_for_pb_pi(entity_name: str) -> str | None:
-    """
-    PB-1 -> PR-1
-    PI-12 -> PR-12
-    PM-3 -> None
-    """
-    if entity_name is None:
-        return None
-    s = str(entity_name).strip()
-    m = re.match(r"^(PB|PI)[-_ ]?(\d+)$", s, flags=re.I)
-    if not m:
-        return None
-    return f"PR-{m.group(2)}"

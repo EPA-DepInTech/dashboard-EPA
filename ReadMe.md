@@ -5,28 +5,28 @@
 ![license](https://img.shields.io/badge/licenca-all%20rights%20reserved-blue)
 
 ## Visao geral
-Aplicacao Streamlit para carregamento de planilhas Excel e criacao de graficos customizaveis a partir de dados de monitoramento. O app le multiplas abas, identifica tabelas validas, normaliza colunas e oferece modos de visualizacao temporal ou por pouco/ponto, com tratamento especial para NA/NO/FL e status qualitativos.
+Aplicacao Streamlit para carregamento de planilhas Excel e criacao de graficos customizaveis a partir de dados de monitoramento. O app le multiplas abas, identifica tabelas validas, normaliza colunas e oferece modos de visualizacao temporal ou por poco/ponto, com tratamento especial para NA/NO/FL e status qualitativos.
 
 ## Funcionalidades principais
 - Upload de Excel (.xlsx) com validacao e limpeza automatica das abas.
-- Visualizacao de tabelas filtradas (remove linhas "Acumulado" e formata datas).
 - Criacao de graficos com 1 ou 2 eixos Y, com selecao de parametros.
 - Visualizacao por ponto/poco com NA/NO em barras e volume bombeado em linha.
 - Tratamento de valores qualitativos: "Nao medido", "nd", "Destruido", "Soterrado", etc.
 - Fase livre qualitativa (Odor, Oleoso, Pelicula) com marcadores dedicados.
 
 ## Arquitetura e fluxo de dados
-1) O usuario faz upload do Excel na pagina inicial (`app/app.py`).
+1) O usuario faz upload do Excel na pagina inicial (`app/dashboard.py`).
 2) O servico de dataset processa o arquivo e retorna um dicionario de DataFrames.
-3) O app guarda o dataset em `st.session_state` e mostra o status de carregamento.
+3) O app guarda o dataset em `st.session_state` e mostra status, avisos e abas ignoradas.
 4) A pagina de graficos (`app/pages/create_graph.py`) normaliza datasets, agrega por data e ponto e gera os graficos com Plotly.
 
 ## Estrutura do projeto
-- `app/app.py`: pagina inicial, upload e preview da tabela.
+- `app/dashboard.py`: pagina inicial, upload e estado do dataset.
 - `app/pages/create_graph.py`: tela de criacao de graficos e filtros.
 - `app/services/dataset_service.py`: leitura e limpeza de planilhas.
 - `app/charts/builder.py`: construcao dos graficos Plotly.
 - `app/core/state.py`: controle de estado no Streamlit.
+ - `app/services/date_num_prep.py`: utilitarios de data e numero PT-BR.
 
 ## Detalhes do processamento de Excel
 O servico de dataset:
@@ -45,7 +45,7 @@ O servico de dataset:
 Crie e ative o ambiente virtual:
 ```bash
 python -m venv .venv
-.\.venv\Scriptsctivate
+.\.venv\Scripts\activate
 ```
 
 Instale as dependencias:
@@ -56,7 +56,7 @@ pip install -r requirements.txt
 
 Inicie o app:
 ```bash
-streamlit run ./app/app.py
+streamlit run ./app/dashboard.py
 ```
 
 O app fica disponivel em `http://localhost:8501`.
@@ -64,9 +64,8 @@ O app fica disponivel em `http://localhost:8501`.
 ## Como usar
 1) Abra o app e envie um Excel (.xlsx) pela barra lateral.
 2) Valide se as abas foram carregadas (avisos e abas ignoradas aparecem na tela).
-3) Visualize os dados na tabela principal.
-4) Clique em "Criar grafico" para acessar a pagina de graficos.
-5) Selecione colunas de data e poco/ponto, parametros e o tipo de grafico.
+3) Clique em "Criar grafico" para acessar a pagina de graficos.
+4) Selecione o tipo de visualizacao, os pocos e parametros.
 
 ## Fluxo de desenvolvimento
 1) Crie uma branch propria de desenvolvimento.
@@ -86,10 +85,12 @@ ruff check . | pytest -q
 ## Documentacao das funcoes principais
 - `build_dataset_from_excel`: abre o Excel, ignora abas de grafico, extrai tabelas e devolve `df_dict` com avisos/erros. (`app/services/dataset_service.py`)
 - `clean_basic`: remove colunas vazias, normaliza nomes e tenta converter datas/numeros. (`app/services/dataset_service.py`)
-- `prep_vol_bombeado` / `prep_vol_infiltrado`: normaliza datas, converte volume e identifica o ponto/poco. (`app/pages/create_graph.py`)
-- `prep_na_semanal`: interpreta NA/NO/FL, separando valores numericos e status qualitativos, e cria chaves de ponto. (`app/pages/create_graph.py`)
-- `build_point_series`: agrega por data e ponto, monta as colunas para NA/NO, fase livre e volume bombeado. (`app/pages/create_graph.py`)
+- `drop_month_year_if_full_date_exists`: remove colunas Mes/Ano redundantes quando ha data completa. (`app/services/dataset_service.py`)
+- `prep_vol_bombeado` / `prep_vol_infiltrado`: normaliza datas, converte volume e identifica o poco. (`app/pages/create_graph.py`)
+- `prep_na_semanal`: interpreta NA/NO/FL, separando valores numericos e status qualitativos, e cria chaves de entidade. (`app/pages/create_graph.py`)
+- `build_point_series`: agrega por data e ponto, monta colunas para NA/NO/FL e volume bombeado. (`app/pages/create_graph.py`)
 - `build_time_chart_plotly`: monta o grafico temporal e aplica transformacoes por serie. (`app/charts/builder.py`)
+- `parse_ptbr_number` / `normalize_dates`: utilitarios de numero e data. (`app/services/date_num_prep.py`)
 
 ## Desenvolvedores
 - Guilherme Rameh - https://github.com/GuilhermeRameh

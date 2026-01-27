@@ -331,23 +331,6 @@ def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_dates(in_situ, "Data")
-    point_col = _get_poco_col(df) or ("Ponto" if "Ponto" in df.columns else None)
-    if point_col and point_col != "Ponto":
-        df = df.rename(columns={point_col: "Ponto"})
-    if "Ponto" in df.columns:
-        df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
-
-    for col in df.columns:
-        if col in ("Data", "Ponto"):
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            continue
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
-
-
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
     na_pr = na[na["entity_key"].notna()].copy()
     na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
@@ -428,21 +411,6 @@ def build_point_series(
 
     wide = pd.concat([vb_wide, na_wide], axis=1).reset_index()
     return wide, na_flat
-
-def _point_color_map(points: list[str]) -> dict[str, str]:
-    palette = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
-    return {p: palette[i % len(palette)] for i, p in enumerate(points)}
 
 
 st.title("NA e Volume - Visualizacoes")
