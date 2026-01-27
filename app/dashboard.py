@@ -62,8 +62,3 @@ if df_dict is None:
 if isinstance(df_dict, dict):
     st.success(" Excel Operacional Carregado")
 
-    # st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
-    # # Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
-    # df_display = remove_accumulated_rows(df)
-    # df_display = format_datetime_columns_for_display(df_display)
-    # st.dataframe(df_display, use_container_width=True)
