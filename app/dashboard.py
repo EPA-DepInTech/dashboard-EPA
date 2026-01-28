@@ -2,7 +2,13 @@
 import streamlit as st
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
+<<<<<<< HEAD:app/app.py
 from services.dataset_service import build_dataset_from_excel
+=======
+from services.dataset_service import (
+    build_dataset_from_excel,
+)
+>>>>>>> origin/main:app/dashboard.py
 
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()
@@ -60,8 +66,3 @@ if df_dict is None:
 if isinstance(df_dict, dict):
     st.success(" Excel Operacional Carregado")
 
-    # st.caption(f"{selected} — {len(df)} linhas | {len(df.columns)} colunas")
-    # # Remove linhas com "Acumulado" e formata datas para exibição (remove hora)
-    # df_display = remove_accumulated_rows(df)
-    # df_display = format_datetime_columns_for_display(df_display)
-    # st.dataframe(df_display, use_container_width=True)

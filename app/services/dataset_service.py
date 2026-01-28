@@ -39,56 +39,6 @@ def _is_empty_df(df: pd.DataFrame | None) -> bool:
     return df is None or df.empty
 
 
-def format_datetime_columns_for_display(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Remove a hora de colunas datetime, mantendo apenas a data.
-    Retorna uma cópia do DataFrame com as datas formatadas como strings (apenas data).
-    """
-    if _is_empty_df(df):
-        return df
-    
-    df_display = df.copy()
-    
-    for col in df_display.columns:
-        if pd.api.types.is_datetime64_any_dtype(df_display[col]):
-            # Formata para string no padrão DD/MM/YYYY
-            df_display[col] = df_display[col].dt.strftime("%d/%m/%Y")
-    
-    return df_display
-
-
-def remove_accumulated_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Remove linhas onde a coluna de "Poço" contém "Acumulado".
-    Procura por colunas que possam conter essa informação (Poço, poco, ponto, well, etc).
-    """
-    if _is_empty_df(df):
-        return df
-    
-    df_filtered = df.copy()
-    
-    # Procura por coluna que contém informação de poço/ponto
-    poco_col = None
-    candidates = ["poço", "poco", "ponto", "well", "pocos", "pontos", "wells"]
-    
-    for col in df_filtered.columns:
-        col_lower = col.lower()
-        for candidate in candidates:
-            if candidate in col_lower:
-                poco_col = col
-                break
-        if poco_col:
-            break
-    
-    # Se encontrou coluna de poço, remove linhas com "Acumulado"
-    if poco_col:
-        df_filtered = df_filtered[
-            ~df_filtered[poco_col].astype(str).str.strip().str.lower().eq("acumulado")
-        ]
-    
-    return df_filtered
-
-
 def _strip_accents_basic(s: str) -> str:
     table = str.maketrans(
         "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ",
@@ -730,7 +680,6 @@ def _extract_table_from_ws(
 
     return df
 
-
 # =======================
 # Main entry
 # =======================
@@ -890,71 +839,3 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gráficos).")
 
     return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
-
-def prep_vol_bombeado(vol_bombeado: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_dates(vol_bombeado, "Data")
-    for c in ["Hidrômetro Manhã", "Hidrômetro Tarde", "Volume Bombeado (m³)"]:
-        if c in df.columns:
-            df[c] = df[c].map(parse_ptbr_number)
-    df["prefix"] = df["Poço"].map(add_prefix)
-    return df
-
-def prep_vol_infiltrado(vol_infiltrado: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_dates(vol_infiltrado, "Data")
-    for c in ["Hidrômetro Manhã", "Hidrômetro Tarde", "Volume Infiltrado"]:
-        if c in df.columns:
-            df[c] = df[c].map(parse_ptbr_number)
-    df["prefix"] = df["Ponto"].map(add_prefix)
-    return df
-
-def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_dates(na_semanal, "Data")
-    for c in ["NA (m)", "NO (m)", "FL (m)"]:
-        if c in df.columns:
-            df[c] = df[c].map(parse_ptbr_number)
-    df["prefix"] = df["Poco"].map(add_prefix)
-    return df
-
-def build_entity_df(entity: str, vb: pd.DataFrame, vi: pd.DataFrame, na: pd.DataFrame) -> pd.DataFrame:
-    """
-    Junta no mesmo DF as colunas possíveis para a entidade selecionada.
-    Nem toda entidade existe nos 3 datasets, então vai entrando só o que tiver.
-    """
-    parts = []
-
-    # vol bombeado por Poço
-    df_vb = vb[(vb["Poço"] == entity) & (vb["Poço"] != "Acumulado")].copy()
-    if not df_vb.empty:
-        df_vb = df_vb.rename(columns={
-            "Hidrômetro Manhã": "bombeado_hm",
-            "Hidrômetro Tarde": "bombeado_ht",
-            "Volume Bombeado (m³)": "bombeado_vol",
-        })
-        parts.append(df_vb[["Data", "bombeado_hm", "bombeado_ht", "bombeado_vol"]])
-
-    # vol infiltrado por Ponto
-    df_vi = vi[(vi["Ponto"] == entity) & (vi["Ponto"] != "Acumulado")].copy()
-    if not df_vi.empty:
-        df_vi = df_vi.rename(columns={
-            "Hidrômetro Manhã": "infiltrado_hm",
-            "Hidrômetro Tarde": "infiltrado_ht",
-            "Volume Infiltrado": "infiltrado_vol",
-        })
-        parts.append(df_vi[["Data", "infiltrado_hm", "infiltrado_ht", "infiltrado_vol"]])
-
-    # NA semanal por Poco
-    df_na = na[na["Poco"] == entity].copy()
-    if not df_na.empty:
-        df_na = df_na.rename(columns={"NA (m)": "na_m"})
-        parts.append(df_na[["Data", "na_m"]])
-
-    if not parts:
-        return pd.DataFrame(columns=["Data"])
-
-    # merge progressivo por Data
-    out = parts[0]
-    for p in parts[1:]:
-        out = out.merge(p, on="Data", how="outer")
-
-    out = out.sort_values("Data")
-    return out

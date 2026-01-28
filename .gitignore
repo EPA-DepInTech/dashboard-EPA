@@ -1,4 +1,36 @@
-.venv/*
+# venv
+.venv/
+venv/
+
+# python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# IDE
 .vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# env/secrets
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+
+# streamlit secrets (se usar futuramente)
+.streamlit/secrets.toml
+
+# datasets locais
+*.xlsx
+*.xls
+*.csv
