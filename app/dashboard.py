@@ -1,14 +1,10 @@
-﻿# app.py
+﻿# dashboard.py
 import streamlit as st
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
-<<<<<<< HEAD:app/app.py
-from services.dataset_service import build_dataset_from_excel
-=======
 from services.dataset_service import (
     build_dataset_from_excel,
 )
->>>>>>> origin/main:app/dashboard.py
 
 st.set_page_config(page_title="Dashboard de Amostras", layout="wide")
 init_session_state()

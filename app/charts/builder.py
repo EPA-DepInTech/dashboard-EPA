@@ -118,12 +118,9 @@ def build_time_chart_plotly(
             continue
 
         x_col = spec.x or x
-<<<<<<< HEAD
         if x_col not in data.columns:
             continue
 
-=======
->>>>>>> origin/main
         cols = [x_col, spec.y] + (spec.hover_cols or [])
         sdata = data[cols].copy()
         sdata[x_col] = pd.to_datetime(sdata[x_col], errors="coerce")
