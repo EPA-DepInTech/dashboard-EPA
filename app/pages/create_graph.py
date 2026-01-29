@@ -331,6 +331,23 @@ def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_dates(in_situ, "Data")
+    point_col = _get_poco_col(df) or ("Ponto" if "Ponto" in df.columns else None)
+    if point_col and point_col != "Ponto":
+        df = df.rename(columns={point_col: "Ponto"})
+    if "Ponto" in df.columns:
+        df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
+
+    for col in df.columns:
+        if col in ("Data", "Ponto"):
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
     na_pr = na[na["entity_key"].notna()].copy()
     na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
@@ -429,16 +446,70 @@ vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
 vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])
 na = prep_na_semanal(df_dict["NA Semanal"])
 
-subpage = st.radio(
-    "Subpagina",
-    ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"],
-    horizontal=True,
-)
+in_situ = None
+if "In Situ" in df_dict:
+    try:
+        prepared = prep_in_situ(df_dict["In Situ"])
+        if not prepared.empty:
+            in_situ = prepared
+    except Exception as e:
+        st.warning(f"Falha ao preparar dados de In Situ: {e}")
+
+subpage_options = ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"]
+if in_situ is not None:
+    subpage_options.append("In situ")
+
+with st.sidebar:
+    st.subheader("Abas")
+    subpage = st.radio(
+        "Selecionar grafico",
+        subpage_options,
+        index=0,
+        horizontal=False,
+    )
 
 if subpage == "Media NA vs Volume Infiltrado":
     st.subheader("Media do NA (PR) vs Volume Infiltrado")
 
     na_vi = build_na_pr_vs_infiltrado(na, vi)
+
+    insitu_val_col = None
+    insitu_param_avg = None
+    if in_situ is not None:
+        insitu_params = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+        if insitu_params:
+            add_insitu = st.checkbox("Exibir In situ", value=False, key="avg_insitu_toggle")
+            if add_insitu:
+                insitu_points = sorted(in_situ["Ponto"].dropna().unique().tolist())
+                default_points = insitu_points if len(insitu_points) <= 8 else insitu_points[:8]
+                selected_insitu_points = st.multiselect(
+                    "Pontos In situ",
+                    insitu_points,
+                    default=default_points,
+                    key="avg_insitu_points",
+                )
+                insitu_param_avg = st.selectbox(
+                    "Parametro In situ",
+                    insitu_params,
+                    key="avg_insitu_param",
+                )
+
+                if not selected_insitu_points:
+                    st.info("Selecione ao menos um ponto para exibir o In situ.")
+                else:
+                    df_insitu = in_situ[in_situ["Ponto"].isin(selected_insitu_points)].copy()
+                    df_insitu["Data"] = pd.to_datetime(df_insitu["Data"], errors="coerce")
+                    df_insitu = df_insitu.dropna(subset=["Data"])
+                    if not df_insitu.empty and insitu_param_avg in df_insitu.columns:
+                        insitu_daily = (
+                            df_insitu.groupby("Data", as_index=False)[insitu_param_avg]
+                            .mean()
+                            .rename(columns={insitu_param_avg: "insitu_val"})
+                        )
+                        na_vi = na_vi.merge(insitu_daily, on="Data", how="outer")
+                        insitu_val_col = "insitu_val"
+                    else:
+                        st.info("Nenhum dado In situ encontrado para o parametro/pontos escolhidos.")
 
     series = [
         SeriesSpec(
@@ -446,7 +517,7 @@ if subpage == "Media NA vs Volume Infiltrado":
             label="NA medio PR (m)",
             kind="line",
             marker="circle",
-            color="#2ca02c",
+            color="#146c43",
             connect_gaps=True,
         ),
         SeriesSpec(
@@ -454,9 +525,21 @@ if subpage == "Media NA vs Volume Infiltrado":
             label="Volume Infiltrado",
             kind="bar",
             axis="y2",
-            color="#1f77b4",
+            color="rgba(133, 193, 233, 0.45)",
         ),
     ]
+    if insitu_val_col and insitu_val_col in na_vi.columns:
+        series.append(
+            SeriesSpec(
+                y=insitu_val_col,
+                label=f"{insitu_param_avg} (In situ)",
+                kind="line",
+                marker="diamond",
+                color="#9467bd",
+                axis="y",
+                connect_gaps=True,
+            )
+        )
 
     fig, _ = build_time_chart_plotly(
         na_vi,
@@ -467,10 +550,11 @@ if subpage == "Media NA vs Volume Infiltrado":
         limit_points=200000,
     )
     fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
-    fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
+    if any(s.axis == "y2" for s in series):
+        fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
 
     st.plotly_chart(fig, use_container_width=True)
-else:
+elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
 
     all_points = sorted(
@@ -500,6 +584,43 @@ else:
     )
 
     param_options = ["NA", "Volume bombeado"]
+    if in_situ is not None:
+        param_options.append("In situ")
+    insitu_param = None
+
+    # Define palettes outside the mode conditional so they're available in both branches
+    phase_colors = {
+        "Odor": "#f1c40f",
+        "Oleoso": "#f39c12",
+        "Iridescencia": "#fff2a8",
+        "Pelicula": "#e74c3c",
+    }
+    na_palette = [
+        "#0b5d1e",
+        "#136f63",
+        "#1d6fb8",
+        "#6c3fb4",
+        "#b23c8a",
+    ]
+    vb_palette = [
+        "#f59f00",
+        "#f76707",
+        "#f03e3e",
+        "#e03131",
+        "#c92a2a",
+        "#b02525",
+        "#862e9c",
+    ]
+    insitu_palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#17becf",
+    ]
 
     if mode == "Poco individual":
         if "point_index" not in st.session_state:
@@ -575,6 +696,22 @@ else:
 
         selected_points = list(st.session_state["multi_points"])
 
+    if "In situ" in selected_params:
+        if in_situ is None:
+            st.warning("Aba 'In Situ' nao carregada. Parametro removido.")
+            selected_params = [p for p in selected_params if p != "In situ"]
+        else:
+            insitu_options = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+            if not insitu_options:
+                st.warning("Nenhum parametro numerico encontrado na aba In Situ. Parametro removido.")
+                selected_params = [p for p in selected_params if p != "In situ"]
+            else:
+                insitu_param = st.selectbox(
+                    "Parametro In situ",
+                    insitu_options,
+                    key="insitu_param_selector",
+                )
+
     if "NA" not in selected_params:
         selected_params = ["NA"] + selected_params
 
@@ -590,6 +727,28 @@ else:
         st.info("Sem dados de data para os pocos selecionados.")
         st.stop()
     wide = wide.set_index("Data")
+    insitu_cols_map: dict[str, str] = {}
+    if insitu_param and "In situ" in selected_params and in_situ is not None:
+        insitu_data = in_situ[in_situ["Ponto"].isin(selected_points)].copy()
+        insitu_data["Data"] = pd.to_datetime(insitu_data["Data"], errors="coerce")
+        insitu_data = insitu_data.dropna(subset=["Data"])
+        if insitu_param not in insitu_data.columns or insitu_data.empty:
+            st.info("Nenhum dado In situ disponivel para o parametro/pontos selecionados.")
+            selected_params = [p for p in selected_params if p != "In situ"]
+        else:
+            pivot = insitu_data.pivot_table(
+                index="Data",
+                columns="Ponto",
+                values=insitu_param,
+                aggfunc="mean",
+            )
+            pivot.index = pd.to_datetime(pivot.index)
+            insitu_cols_map = {pt: f"in_situ__{pt}" for pt in pivot.columns}
+            pivot = pivot.rename(columns=insitu_cols_map)
+            full_index = wide.index.union(pivot.index)
+            wide = wide.reindex(full_index)
+            pivot = pivot.reindex(full_index)
+            wide = pd.concat([wide, pivot], axis=1)
 
     if mode == "Poco individual":
         phase_colors = {
@@ -599,30 +758,40 @@ else:
             "Pelicula": "#e74c3c",
         }
         na_palette = [
-            "rgba(46, 139, 87, 0.6)",
-            "rgba(40, 161, 152, 0.6)",
-            "rgba(35, 139, 214, 0.6)",
-            "rgba(58, 105, 214, 0.6)",
-            "rgba(94, 88, 214, 0.6)",
+            "#0b5d1e",
+            "#136f63",
+            "#1d6fb8",
+            "#6c3fb4",
+            "#b23c8a",
         ]
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
-        fl_bar_color = "rgba(214, 39, 40, 0.6)"
+        fl_bar_color = "rgba(214, 39, 40, 0.35)"
         air_fill = "rgba(0, 0, 0, 0)"
-        air_line = "rgba(180, 180, 180, 0.7)"
-        water_tail_color = "rgba(30, 90, 150, 0.8)"
-        water_fade_mid = "rgba(30, 90, 150, 0.45)"
-        water_fade_low = "rgba(30, 90, 150, 0.15)"
-        dry_marker_color = "rgba(220, 80, 80, 0.9)"
+        air_line = "rgba(150, 150, 150, 0.65)"
+        water_tail_color = "rgba(76, 139, 245, 0.55)"
+        water_fade_mid = "rgba(76, 139, 245, 0.32)"
+        water_fade_low = "rgba(76, 139, 245, 0.16)"
+        dry_marker_color = "rgba(200, 70, 70, 0.9)"
         vb_palette = [
-            "#ffcc00",
+            "#f59f00",
+            "#f76707",
+            "#f03e3e",
+            "#e03131",
+            "#c92a2a",
+            "#b02525",
+            "#862e9c",
+        ]
+        vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
+        insitu_palette = [
+            "#1f77b4",
+            "#ff7f0e",
             "#2ca02c",
             "#d62728",
             "#9467bd",
             "#8c564b",
             "#e377c2",
-            "#bcbd22",
+            "#17becf",
         ]
-        vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
         status_marker_color = "rgba(130, 130, 130, 0.8)"
 
         phase_specs: list[SeriesSpec] = []
@@ -848,6 +1017,7 @@ else:
         fl_series: list[SeriesSpec] = []
         water_series: list[SeriesSpec] = []
         line_series: list[SeriesSpec] = []
+        insitu_series: list[SeriesSpec] = []
         for point in selected_points:
             col_air = f"air__{point}"
             if col_air in wide.columns:
@@ -917,8 +1087,22 @@ else:
                         axis="y2",
                     )
                 )
+            if "In situ" in selected_params and insitu_param and insitu_cols_map:
+                col_insitu = insitu_cols_map.get(point)
+                if col_insitu and col_insitu in wide.columns:
+                    insitu_series.append(
+                        SeriesSpec(
+                            y=col_insitu,
+                            label=f"{insitu_param} (In situ) - {point}",
+                            kind="line",
+                            marker="diamond",
+                            color=insitu_palette[ selected_points.index(point) % len(insitu_palette)],
+                            axis="y",
+                            connect_gaps=True,
+                        )
+                    )
 
-        series = air_series + fl_series + water_series + line_series
+        series = air_series + fl_series + water_series + line_series + insitu_series
 
         series.extend(phase_specs)
         series.extend(status_specs)
@@ -1001,32 +1185,10 @@ else:
 
         st.plotly_chart(fig2, use_container_width=True)
     else:
-        phase_colors = {
-            "Odor": "#f1c40f",
-            "Oleoso": "#f39c12",
-            "Iridescencia": "#fff2a8",
-            "Pelicula": "#e74c3c",
-        }
-        na_palette = [
-            "rgba(46, 139, 87, 0.8)",
-            "rgba(40, 161, 152, 0.8)",
-            "rgba(35, 139, 214, 0.8)",
-            "rgba(58, 105, 214, 0.8)",
-            "rgba(94, 88, 214, 0.8)",
-        ]
-        vb_palette = [
-            "#ffcc00",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-            "#e377c2",
-            "#bcbd22",
-        ]
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
         vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
-        status_marker_color = "rgba(130, 130, 130, 0.85)"
-        dry_marker_color = "rgba(220, 80, 80, 0.9)"
+        status_marker_color = "rgba(120, 120, 120, 0.85)"
+        dry_marker_color = "rgba(200, 70, 70, 0.9)"
 
         def _display_status_label(status: str) -> str:
             norm = _norm_text(status)
@@ -1068,6 +1230,22 @@ else:
                             kind="bar",
                             color=vb_color_map.get(point, vb_palette[0]),
                             axis="y2",
+                        )
+                    )
+
+        if "In situ" in selected_params and insitu_param and insitu_cols_map:
+            for point in selected_points:
+                col_insitu = insitu_cols_map.get(point)
+                if col_insitu and col_insitu in wide.columns:
+                    series.append(
+                        SeriesSpec(
+                            y=col_insitu,
+                            label=f"{insitu_param} (In situ) - {point}",
+                            kind="line",
+                            marker="diamond",
+                            color=insitu_palette[selected_points.index(point) % len(insitu_palette)],
+                            axis="y",
+                            connect_gaps=True,
                         )
                     )
 
@@ -1227,3 +1405,96 @@ else:
             fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
         st.plotly_chart(fig2, use_container_width=True)
+elif subpage == "In situ":
+    st.subheader("In situ")
+
+    if in_situ is None or in_situ.empty:
+        st.info("Planilha 'In Situ' nao encontrada ou sem dados.")
+        st.stop()
+
+    params = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+    if not params:
+        st.info("Nenhum parametro numerico identificado na aba In Situ.")
+        st.stop()
+
+    points = sorted(in_situ["Ponto"].dropna().unique().tolist())
+    if not points:
+        st.info("Nenhum ponto encontrado na aba In Situ.")
+        st.stop()
+
+    date_min = pd.to_datetime(in_situ["Data"], errors="coerce").min()
+    date_max = pd.to_datetime(in_situ["Data"], errors="coerce").max()
+    default_range = None
+    if pd.notna(date_min) and pd.notna(date_max):
+        default_range = (date_min.date(), date_max.date())
+
+    ctrl_cols = st.columns([2, 2, 1], gap="small")
+    selected_param = ctrl_cols[0].selectbox("Parametro", params)
+    default_points = points if len(points) <= 8 else points[:8]
+    selected_points = ctrl_cols[1].multiselect(
+        "Pontos",
+        points,
+        default=default_points,
+    )
+    date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
+
+    if not selected_points:
+        st.info("Selecione ao menos um ponto para exibir o grafico.")
+        st.stop()
+
+    data = in_situ[in_situ["Ponto"].isin(selected_points)].copy()
+    data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+    data = data.dropna(subset=["Data"])
+
+    if isinstance(date_input, (list, tuple)) and len(date_input) == 2:
+        start, end = date_input
+        if start:
+            data = data[data["Data"] >= pd.to_datetime(start)]
+        if end:
+            data = data[data["Data"] <= pd.to_datetime(end)]
+
+    chart_df = (
+        data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
+        .reset_index()
+        .sort_values("Data")
+    )
+
+    value_cols = [c for c in chart_df.columns if c != "Data"]
+    if not value_cols:
+        st.info("Nao ha valores para o parametro selecionado nos pontos escolhidos.")
+        st.stop()
+
+    palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#17becf",
+    ]
+
+    series = [
+        SeriesSpec(
+            y=col,
+            label=f"{col} - {selected_param}",
+            kind="line",
+            marker="circle",
+            color=palette[i % len(palette)],
+            connect_gaps=True,
+        )
+        for i, col in enumerate(value_cols)
+    ]
+
+    fig3, _ = build_time_chart_plotly(
+        chart_df,
+        x="Data",
+        series=series,
+        title=f"{selected_param} - In situ",
+        show_range_slider=False,
+        limit_points=200000,
+    )
+    fig3.update_yaxes(title_text=selected_param, secondary_y=False)
+
+    st.plotly_chart(fig3, use_container_width=True)
