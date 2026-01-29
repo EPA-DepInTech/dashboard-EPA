@@ -588,6 +588,40 @@ elif subpage == "Visualizacao aprofundada":
         param_options.append("In situ")
     insitu_param = None
 
+    # Define palettes outside the mode conditional so they're available in both branches
+    phase_colors = {
+        "Odor": "#f1c40f",
+        "Oleoso": "#f39c12",
+        "Iridescencia": "#fff2a8",
+        "Pelicula": "#e74c3c",
+    }
+    na_palette = [
+        "#0b5d1e",
+        "#136f63",
+        "#1d6fb8",
+        "#6c3fb4",
+        "#b23c8a",
+    ]
+    vb_palette = [
+        "#f59f00",
+        "#f76707",
+        "#f03e3e",
+        "#e03131",
+        "#c92a2a",
+        "#b02525",
+        "#862e9c",
+    ]
+    insitu_palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#17becf",
+    ]
+
     if mode == "Poco individual":
         if "point_index" not in st.session_state:
             st.session_state["point_index"] = 0
@@ -748,6 +782,16 @@ elif subpage == "Visualizacao aprofundada":
             "#862e9c",
         ]
         vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
+        insitu_palette = [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#17becf",
+        ]
         status_marker_color = "rgba(130, 130, 130, 0.8)"
 
         phase_specs: list[SeriesSpec] = []
@@ -1141,28 +1185,6 @@ elif subpage == "Visualizacao aprofundada":
 
         st.plotly_chart(fig2, use_container_width=True)
     else:
-        phase_colors = {
-            "Odor": "#f1c40f",
-            "Oleoso": "#f39c12",
-            "Iridescencia": "#fff2a8",
-            "Pelicula": "#e74c3c",
-        }
-        na_palette = [
-            "#0b5d1e",
-            "#136f63",
-            "#1d6fb8",
-            "#6c3fb4",
-            "#b23c8a",
-        ]
-        vb_palette = [
-            "#f59f00",
-            "#f76707",
-            "#f03e3e",
-            "#e03131",
-            "#c92a2a",
-            "#b02525",
-            "#862e9c",
-        ]
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
         vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
         status_marker_color = "rgba(120, 120, 120, 0.85)"
