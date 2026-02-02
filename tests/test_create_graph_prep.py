@@ -5,7 +5,6 @@ import sys
 import types
 
 import pandas as pd
-import streamlit as st
 
 os.environ["EPA_TESTING"] = "1"
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
