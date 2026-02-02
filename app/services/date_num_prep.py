@@ -35,7 +35,12 @@ def parse_ptbr_number(s):
 
 
 def normalize_dates(df, date_col):
+    if df is None:
+        return pd.DataFrame(columns=[date_col])
     df = df.copy()
+    if date_col not in df.columns:
+        df[date_col] = pd.NaT
+        return df
     df[date_col] = pd.to_datetime(df[date_col], dayfirst=True, errors="coerce")
     return df
 

@@ -264,9 +264,7 @@ def prep_vol_infiltrado(vol_infiltrado: pd.DataFrame) -> pd.DataFrame:
 
 
 def prep_na_semanal(na_semanal: pd.DataFrame) -> pd.DataFrame:
-    df = na_semanal.copy()
-    if "Data" in df.columns:
-        df = normalize_dates(df, "Data")
+    df = normalize_dates(na_semanal, "Data")
     poco_col = _get_poco_col(df)
     df["poco_key"] = df[poco_col] if poco_col else pd.NA
     df["entity_key"] = df["poco_key"]
@@ -349,10 +347,16 @@ def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
-    na_pr = na[na["entity_key"].notna()].copy()
-    na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
+    if "Data" not in na.columns or "na_val" not in na.columns or "entity_key" not in na.columns:
+        na_pr = pd.DataFrame(columns=["Data", "na_val"])
+    else:
+        na_pr = na[na["entity_key"].notna()].copy()
+        na_pr = na_pr.groupby("Data", as_index=False)["na_val"].mean()
 
-    vi_daily = vi.groupby("Data", as_index=False)["infiltrado_vol"].sum()
+    if "Data" not in vi.columns or "infiltrado_vol" not in vi.columns:
+        vi_daily = pd.DataFrame(columns=["Data", "infiltrado_vol"])
+    else:
+        vi_daily = vi.groupby("Data", as_index=False)["infiltrado_vol"].sum()
 
     out = na_pr.merge(vi_daily, on="Data", how="outer")
     return out.sort_values("Data")
@@ -436,11 +440,13 @@ df_dict = st.session_state.get("df_dict")
 if df_dict is None or not isinstance(df_dict, dict):
     st.info("Arquivo foi carregado, mas ainda nao ha dataset em memoria.")
     st.stop()
+    df_dict = {}
 
 for required in ["Volume Bombeado", "Volume Infiltrado", "NA Semanal"]:
     if required not in df_dict:
         st.error(f"Planilha obrigatoria ausente: {required}")
         st.stop()
+        df_dict[required] = pd.DataFrame()
 
 vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
 vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])

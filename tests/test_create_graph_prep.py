@@ -5,8 +5,12 @@ import sys
 import types
 
 import pandas as pd
+import streamlit as st
 
 os.environ["EPA_TESTING"] = "1"
+APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
+if APP_DIR not in sys.path:
+    sys.path.insert(0, APP_DIR)
 if "streamlit" not in sys.modules:
     sys.modules["streamlit"] = types.SimpleNamespace()
 from app.pages import create_graph as cg  # noqa: E402
