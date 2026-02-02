@@ -53,6 +53,50 @@ def _norm(s: str) -> str:
     return s
 
 
+def _standardize_sheet_key(sheet_name: str) -> str:
+    n = _norm(sheet_name)
+    if "na semanal" in n:
+        return "NA Semanal"
+    if "in situ" in n or "insitu" in n:
+        return "In Situ"
+    if "bombeado" in n:
+        return "Volume Bombeado"
+    if "infiltrado" in n:
+        return "Volume Infiltrado"
+    return sheet_name
+
+
+def _classify_in_situ_df(df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return "pontos"
+    point_col = None
+    for col in df.columns:
+        ncol = _norm_colname(col)
+        if "poco" in ncol or "ponto" in ncol:
+            point_col = col
+            break
+    if point_col is None:
+        return "geral"
+    points = (
+        df[point_col]
+        .dropna()
+        .astype(str)
+        .map(lambda x: _norm(x))
+        .unique()
+        .tolist()
+    )
+    points = [p for p in points if p]
+    if not points:
+        return "geral"
+    if len(points) == 1:
+        if points[0] in {"geral", "saida", "acumulado", "media", "total"}:
+            return "geral"
+    general_names = {"entrada", "saida", "geral", "acumulado", "media", "total"}
+    if all(p in general_names for p in points):
+        return "geral"
+    return "pontos"
+
+
 def _norm_colname(c: str) -> str:
     return _norm(c).replace("/", " ").replace("-", " ").replace("_", " ")
 
@@ -716,6 +760,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         ws = wb[sheet_name]
 
         sn = _norm(sheet_name)
+        std_key = _standardize_sheet_key(sheet_name)
         if sn == "na semanal":
             df = _extract_na_semanal_ws(ws)
             if df is None or df.empty:
@@ -728,13 +773,20 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                     )
                 )
             else:
-                df_dict[sheet_name] = df
+                df_dict[std_key] = df
                 if "Data" in df.columns:
                     df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
             continue
 
         if sn == "in situ":
             df = _extract_in_situ_ws(ws)
+            if df is None or df.empty:
+                try:
+                    df = _extract_table_from_ws(ws)
+                    if df is not None:
+                        df = clean_basic(df)
+                except Exception:
+                    df = None
             if df is None or df.empty:
                 skipped.append(
                     SheetSkipInfo(
@@ -745,7 +797,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                     )
                 )
             else:
-                df_dict[sheet_name] = df
+                df_dict[std_key] = df
             continue
 
         if _is_na_semanal_sheet(ws):
@@ -760,7 +812,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                     )
                 )
             else:
-                df_dict[sheet_name] = df
+                df_dict[std_key] = df
             continue
 
         has_charts = _sheet_has_charts(ws)
@@ -818,7 +870,7 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                 )
                 continue
 
-            df_dict[sheet_name] = df
+            df_dict[std_key] = df
 
         except Exception as e:
             warnings.append(f"Erro ao processar a aba '{sheet_name}': {e}")
@@ -839,3 +891,77 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
         warnings.append(f"Foram ignoradas {len(skipped)} abas que Não pareciam tabulares (ex.: gráficos).")
 
     return DatasetResult(df_dict=df_dict, errors=errors, warnings=warnings, skipped=skipped)
+
+
+def _merge_df_list(dfs: list[pd.DataFrame]) -> pd.DataFrame:
+    if not dfs:
+        return pd.DataFrame()
+    df = pd.concat(dfs, ignore_index=True, sort=False)
+    df = df.drop_duplicates()
+    if "Data" in df.columns:
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce", dayfirst=True)
+        df = df.sort_values("Data")
+    return df.reset_index(drop=True)
+
+
+def build_dataset_from_excels(uploaded_files) -> DatasetResult:
+    errors: list[str] = []
+    warnings: list[str] = []
+    skipped: list[SheetSkipInfo] = []
+
+    if not uploaded_files:
+        return DatasetResult(df_dict=None, errors=["Nenhum arquivo enviado."], warnings=[], skipped=[])
+
+    grouped: dict[str, list[pd.DataFrame]] = {}
+    in_situ_pontos: list[pd.DataFrame] = []
+    in_situ_geral: list[pd.DataFrame] = []
+
+    for uploaded_file in uploaded_files:
+        result = build_dataset_from_excel(uploaded_file)
+        if result.errors:
+            name = getattr(uploaded_file, "name", "arquivo")
+            errors.extend([f"{name}: {e}" for e in result.errors])
+            continue
+
+        warnings.extend(result.warnings)
+        skipped.extend(result.skipped)
+
+        if not result.df_dict:
+            continue
+
+        for key, df in result.df_dict.items():
+            if key == "In Situ":
+                if df is None or df.empty:
+                    continue
+                kind = _classify_in_situ_df(df)
+                df_copy = df.copy()
+                if "Ponto" not in df_copy.columns:
+                    df_copy["Ponto"] = "GERAL"
+                if kind == "geral":
+                    in_situ_geral.append(df_copy)
+                else:
+                    in_situ_pontos.append(df_copy)
+                continue
+
+            grouped.setdefault(key, []).append(df)
+
+    merged: dict[str, pd.DataFrame] = {}
+
+    for key, dfs in grouped.items():
+        merged_df = _merge_df_list(dfs)
+        if not merged_df.empty:
+            merged[key] = merged_df
+
+    if in_situ_pontos:
+        merged["In Situ (Pontos)"] = _merge_df_list(in_situ_pontos)
+    if in_situ_geral:
+        merged["In Situ (Geral)"] = _merge_df_list(in_situ_geral)
+
+    if not merged:
+        errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
+        return DatasetResult(df_dict=None, errors=errors, warnings=warnings, skipped=skipped)
+
+    if skipped:
+        warnings.append(f"Foram ignoradas {len(skipped)} abas que NAO pareciam tabulares (ex.: graficos).")
+
+    return DatasetResult(df_dict=merged, errors=errors, warnings=warnings, skipped=skipped)

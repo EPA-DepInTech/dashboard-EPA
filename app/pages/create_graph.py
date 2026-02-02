@@ -446,17 +446,28 @@ vb = prep_vol_bombeado(df_dict["Volume Bombeado"])
 vi = prep_vol_infiltrado(df_dict["Volume Infiltrado"])
 na = prep_na_semanal(df_dict["NA Semanal"])
 
-in_situ = None
-if "In Situ" in df_dict:
+in_situ_pontos = None
+in_situ_geral = None
+for key in ("In Situ (Pontos)", "In Situ"):
+    if key in df_dict:
+        try:
+            prepared = prep_in_situ(df_dict[key])
+            if not prepared.empty:
+                in_situ_pontos = prepared
+                break
+        except Exception as e:
+            st.warning(f"Falha ao preparar dados de In Situ (Pontos): {e}")
+
+if "In Situ (Geral)" in df_dict:
     try:
-        prepared = prep_in_situ(df_dict["In Situ"])
+        prepared = prep_in_situ(df_dict["In Situ (Geral)"])
         if not prepared.empty:
-            in_situ = prepared
+            in_situ_geral = prepared
     except Exception as e:
-        st.warning(f"Falha ao preparar dados de In Situ: {e}")
+        st.warning(f"Falha ao preparar dados de In Situ (Geral): {e}")
 
 subpage_options = ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"]
-if in_situ is not None:
+if in_situ_pontos is not None or in_situ_geral is not None:
     subpage_options.append("In situ")
 
 with st.sidebar:
@@ -475,29 +486,71 @@ if subpage == "Media NA vs Volume Infiltrado":
 
     insitu_val_col = None
     insitu_param_avg = None
-    if in_situ is not None:
-        insitu_params = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+    insitu_label = None
+    if in_situ_pontos is not None or in_situ_geral is not None:
+        insitu_params = []
+        if in_situ_pontos is not None:
+            insitu_params = [c for c in in_situ_pontos.columns if c not in ("Data", "Ponto")]
+        if not insitu_params and in_situ_geral is not None:
+            insitu_params = [c for c in in_situ_geral.columns if c not in ("Data", "Ponto")]
+
         if insitu_params:
             add_insitu = st.checkbox("Exibir In situ", value=False, key="avg_insitu_toggle")
             if add_insitu:
-                insitu_points = sorted(in_situ["Ponto"].dropna().unique().tolist())
-                default_points = insitu_points if len(insitu_points) <= 8 else insitu_points[:8]
-                selected_insitu_points = st.multiselect(
-                    "Pontos In situ",
-                    insitu_points,
-                    default=default_points,
-                    key="avg_insitu_points",
-                )
+                modes = []
+                if in_situ_pontos is not None:
+                    modes.append("Por ponto")
+                if in_situ_geral is not None:
+                    modes.append("Geral")
+                insitu_mode = modes[0]
+                if len(modes) > 1:
+                    insitu_mode = st.radio("Tipo de In situ", modes, horizontal=True)
+
                 insitu_param_avg = st.selectbox(
                     "Parametro In situ",
                     insitu_params,
                     key="avg_insitu_param",
                 )
 
-                if not selected_insitu_points:
-                    st.info("Selecione ao menos um ponto para exibir o In situ.")
+                if insitu_mode == "Por ponto":
+                    insitu_points = sorted(in_situ_pontos["Ponto"].dropna().unique().tolist())
+                    default_points = insitu_points if len(insitu_points) <= 8 else insitu_points[:8]
+                    selected_insitu_points = st.multiselect(
+                        "Pontos In situ",
+                        insitu_points,
+                        default=default_points,
+                        key="avg_insitu_points",
+                    )
+                    if not selected_insitu_points:
+                        st.info("Selecione ao menos um ponto para exibir o In situ.")
+                    else:
+                        df_insitu = in_situ_pontos[in_situ_pontos["Ponto"].isin(selected_insitu_points)].copy()
+                        df_insitu["Data"] = pd.to_datetime(df_insitu["Data"], errors="coerce")
+                        df_insitu = df_insitu.dropna(subset=["Data"])
+                        if not df_insitu.empty and insitu_param_avg in df_insitu.columns:
+                            insitu_daily = (
+                                df_insitu.groupby("Data", as_index=False)[insitu_param_avg]
+                                .mean()
+                                .rename(columns={insitu_param_avg: "insitu_val"})
+                            )
+                            na_vi = na_vi.merge(insitu_daily, on="Data", how="outer")
+                            insitu_val_col = "insitu_val"
+                            insitu_label = f"{insitu_param_avg} (In situ)"
+                        else:
+                            st.info("Nenhum dado In situ encontrado para o parametro/pontos escolhidos.")
                 else:
-                    df_insitu = in_situ[in_situ["Ponto"].isin(selected_insitu_points)].copy()
+                    insitu_points = []
+                    if "Ponto" in in_situ_geral.columns:
+                        insitu_points = sorted(in_situ_geral["Ponto"].dropna().unique().tolist())
+                    if insitu_points:
+                        selected_insitu_point = st.selectbox(
+                            "Ponto In situ (geral)",
+                            insitu_points,
+                            key="avg_insitu_point_geral",
+                        )
+                        df_insitu = in_situ_geral[in_situ_geral["Ponto"] == selected_insitu_point].copy()
+                    else:
+                        df_insitu = in_situ_geral.copy()
                     df_insitu["Data"] = pd.to_datetime(df_insitu["Data"], errors="coerce")
                     df_insitu = df_insitu.dropna(subset=["Data"])
                     if not df_insitu.empty and insitu_param_avg in df_insitu.columns:
@@ -508,8 +561,12 @@ if subpage == "Media NA vs Volume Infiltrado":
                         )
                         na_vi = na_vi.merge(insitu_daily, on="Data", how="outer")
                         insitu_val_col = "insitu_val"
+                        if insitu_points:
+                            insitu_label = f"{insitu_param_avg} (In situ geral - {selected_insitu_point})"
+                        else:
+                            insitu_label = f"{insitu_param_avg} (In situ geral)"
                     else:
-                        st.info("Nenhum dado In situ encontrado para o parametro/pontos escolhidos.")
+                        st.info("Nenhum dado In situ geral encontrado para o parametro escolhido.")
 
     series = [
         SeriesSpec(
@@ -532,7 +589,7 @@ if subpage == "Media NA vs Volume Infiltrado":
         series.append(
             SeriesSpec(
                 y=insitu_val_col,
-                label=f"{insitu_param_avg} (In situ)",
+                label=insitu_label or f"{insitu_param_avg} (In situ)",
                 kind="line",
                 marker="diamond",
                 color="#9467bd",
@@ -584,8 +641,10 @@ elif subpage == "Visualizacao aprofundada":
     )
 
     param_options = ["NA", "Volume bombeado"]
-    if in_situ is not None:
-        param_options.append("In situ")
+    if in_situ_pontos is not None:
+        param_options.append("In situ (pontos)")
+    if in_situ_geral is not None:
+        param_options.append("In situ (geral)")
     insitu_param = None
 
     # Define palettes outside the mode conditional so they're available in both branches
@@ -696,21 +755,49 @@ elif subpage == "Visualizacao aprofundada":
 
         selected_points = list(st.session_state["multi_points"])
 
-    if "In situ" in selected_params:
-        if in_situ is None:
-            st.warning("Aba 'In Situ' nao carregada. Parametro removido.")
-            selected_params = [p for p in selected_params if p != "In situ"]
+    insitu_param = None
+    insitu_param_geral = None
+    insitu_point_geral = None
+
+    if "In situ (pontos)" in selected_params:
+        if in_situ_pontos is None:
+            st.warning("Aba 'In Situ (Pontos)' nao carregada. Parametro removido.")
+            selected_params = [p for p in selected_params if p != "In situ (pontos)"]
         else:
-            insitu_options = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+            insitu_options = [c for c in in_situ_pontos.columns if c not in ("Data", "Ponto")]
             if not insitu_options:
-                st.warning("Nenhum parametro numerico encontrado na aba In Situ. Parametro removido.")
-                selected_params = [p for p in selected_params if p != "In situ"]
+                st.warning("Nenhum parametro numerico encontrado na aba In Situ (Pontos). Parametro removido.")
+                selected_params = [p for p in selected_params if p != "In situ (pontos)"]
             else:
                 insitu_param = st.selectbox(
-                    "Parametro In situ",
+                    "Parametro In situ (pontos)",
                     insitu_options,
-                    key="insitu_param_selector",
+                    key="insitu_param_selector_pontos",
                 )
+
+    if "In situ (geral)" in selected_params:
+        if in_situ_geral is None:
+            st.warning("Aba 'In Situ (Geral)' nao carregada. Parametro removido.")
+            selected_params = [p for p in selected_params if p != "In situ (geral)"]
+        else:
+            insitu_options = [c for c in in_situ_geral.columns if c not in ("Data", "Ponto")]
+            if not insitu_options:
+                st.warning("Nenhum parametro numerico encontrado na aba In Situ (Geral). Parametro removido.")
+                selected_params = [p for p in selected_params if p != "In situ (geral)"]
+            else:
+                insitu_param_geral = st.selectbox(
+                    "Parametro In situ (geral)",
+                    insitu_options,
+                    key="insitu_param_selector_geral",
+                )
+                if "Ponto" in in_situ_geral.columns:
+                    points_geral = sorted(in_situ_geral["Ponto"].dropna().unique().tolist())
+                    if points_geral:
+                        insitu_point_geral = st.selectbox(
+                            "Ponto In situ (geral)",
+                            points_geral,
+                            key="insitu_point_selector_geral",
+                        )
 
     if "NA" not in selected_params:
         selected_params = ["NA"] + selected_params
@@ -728,13 +815,14 @@ elif subpage == "Visualizacao aprofundada":
         st.stop()
     wide = wide.set_index("Data")
     insitu_cols_map: dict[str, str] = {}
-    if insitu_param and "In situ" in selected_params and in_situ is not None:
-        insitu_data = in_situ[in_situ["Ponto"].isin(selected_points)].copy()
+    insitu_geral_col = None
+    if insitu_param and "In situ (pontos)" in selected_params and in_situ_pontos is not None:
+        insitu_data = in_situ_pontos[in_situ_pontos["Ponto"].isin(selected_points)].copy()
         insitu_data["Data"] = pd.to_datetime(insitu_data["Data"], errors="coerce")
         insitu_data = insitu_data.dropna(subset=["Data"])
         if insitu_param not in insitu_data.columns or insitu_data.empty:
             st.info("Nenhum dado In situ disponivel para o parametro/pontos selecionados.")
-            selected_params = [p for p in selected_params if p != "In situ"]
+            selected_params = [p for p in selected_params if p != "In situ (pontos)"]
         else:
             pivot = insitu_data.pivot_table(
                 index="Data",
@@ -749,6 +837,26 @@ elif subpage == "Visualizacao aprofundada":
             wide = wide.reindex(full_index)
             pivot = pivot.reindex(full_index)
             wide = pd.concat([wide, pivot], axis=1)
+
+    if insitu_param_geral and "In situ (geral)" in selected_params and in_situ_geral is not None:
+        insitu_data = in_situ_geral.copy()
+        if insitu_point_geral and "Ponto" in insitu_data.columns:
+            insitu_data = insitu_data[insitu_data["Ponto"] == insitu_point_geral]
+        insitu_data["Data"] = pd.to_datetime(insitu_data["Data"], errors="coerce")
+        insitu_data = insitu_data.dropna(subset=["Data"])
+        if insitu_param_geral not in insitu_data.columns or insitu_data.empty:
+            st.info("Nenhum dado In situ geral disponivel para o parametro selecionado.")
+            selected_params = [p for p in selected_params if p != "In situ (geral)"]
+        else:
+            daily = (
+                insitu_data.groupby("Data", as_index=True)[insitu_param_geral]
+                .mean()
+                .rename("in_situ_geral")
+            )
+            insitu_geral_col = "in_situ_geral"
+            full_index = wide.index.union(daily.index)
+            wide = wide.reindex(full_index)
+            wide[insitu_geral_col] = daily.reindex(full_index)
 
     if mode == "Poco individual":
         phase_colors = {
@@ -1087,7 +1195,7 @@ elif subpage == "Visualizacao aprofundada":
                         axis="y2",
                     )
                 )
-            if "In situ" in selected_params and insitu_param and insitu_cols_map:
+            if "In situ (pontos)" in selected_params and insitu_param and insitu_cols_map:
                 col_insitu = insitu_cols_map.get(point)
                 if col_insitu and col_insitu in wide.columns:
                     insitu_series.append(
@@ -1101,6 +1209,22 @@ elif subpage == "Visualizacao aprofundada":
                             connect_gaps=True,
                         )
                     )
+        if "In situ (geral)" in selected_params and insitu_param_geral and insitu_geral_col:
+            if insitu_geral_col in wide.columns:
+                label = f"{insitu_param_geral} (In situ geral)"
+                if insitu_point_geral:
+                    label = f"{insitu_param_geral} (In situ geral - {insitu_point_geral})"
+                insitu_series.append(
+                    SeriesSpec(
+                        y=insitu_geral_col,
+                        label=label,
+                        kind="line",
+                        marker="diamond",
+                        color="#8c564b",
+                        axis="y",
+                        connect_gaps=True,
+                    )
+                )
 
         series = air_series + fl_series + water_series + line_series + insitu_series
 
@@ -1233,7 +1357,7 @@ elif subpage == "Visualizacao aprofundada":
                         )
                     )
 
-        if "In situ" in selected_params and insitu_param and insitu_cols_map:
+        if "In situ (pontos)" in selected_params and insitu_param and insitu_cols_map:
             for point in selected_points:
                 col_insitu = insitu_cols_map.get(point)
                 if col_insitu and col_insitu in wide.columns:
@@ -1248,6 +1372,23 @@ elif subpage == "Visualizacao aprofundada":
                             connect_gaps=True,
                         )
                     )
+
+        if "In situ (geral)" in selected_params and insitu_param_geral and insitu_geral_col:
+            if insitu_geral_col in wide.columns:
+                label = f"{insitu_param_geral} (In situ geral)"
+                if insitu_point_geral:
+                    label = f"{insitu_param_geral} (In situ geral - {insitu_point_geral})"
+                series.append(
+                    SeriesSpec(
+                        y=insitu_geral_col,
+                        label=label,
+                        kind="line",
+                        marker="diamond",
+                        color="#8c564b",
+                        axis="y",
+                        connect_gaps=True,
+                    )
+                )
 
         if "NA" in selected_params and not na_flat.empty:
             for point in selected_points:
@@ -1408,43 +1549,81 @@ elif subpage == "Visualizacao aprofundada":
 elif subpage == "In situ":
     st.subheader("In situ")
 
-    if in_situ is None or in_situ.empty:
+    if (in_situ_pontos is None or in_situ_pontos.empty) and (in_situ_geral is None or in_situ_geral.empty):
         st.info("Planilha 'In Situ' nao encontrada ou sem dados.")
         st.stop()
 
-    params = [c for c in in_situ.columns if c not in ("Data", "Ponto")]
+    modes = []
+    if in_situ_pontos is not None and not in_situ_pontos.empty:
+        modes.append("Por ponto")
+    if in_situ_geral is not None and not in_situ_geral.empty:
+        modes.append("Geral")
+    mode = modes[0]
+    if len(modes) > 1:
+        mode = st.radio("Tipo de In situ", modes, horizontal=True)
+
+    data_source = in_situ_pontos if mode == "Por ponto" else in_situ_geral
+    params = [c for c in data_source.columns if c not in ("Data", "Ponto")]
     if not params:
         st.info("Nenhum parametro numerico identificado na aba In Situ.")
         st.stop()
 
-    points = sorted(in_situ["Ponto"].dropna().unique().tolist())
-    if not points:
-        st.info("Nenhum ponto encontrado na aba In Situ.")
-        st.stop()
-
-    date_min = pd.to_datetime(in_situ["Data"], errors="coerce").min()
-    date_max = pd.to_datetime(in_situ["Data"], errors="coerce").max()
+    date_min = pd.to_datetime(data_source["Data"], errors="coerce").min()
+    date_max = pd.to_datetime(data_source["Data"], errors="coerce").max()
     default_range = None
     if pd.notna(date_min) and pd.notna(date_max):
         default_range = (date_min.date(), date_max.date())
 
-    ctrl_cols = st.columns([2, 2, 1], gap="small")
-    selected_param = ctrl_cols[0].selectbox("Parametro", params)
-    default_points = points if len(points) <= 8 else points[:8]
-    selected_points = ctrl_cols[1].multiselect(
-        "Pontos",
-        points,
-        default=default_points,
-    )
-    date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
+    if mode == "Por ponto":
+        points = sorted(data_source["Ponto"].dropna().unique().tolist())
+        if not points:
+            st.info("Nenhum ponto encontrado na aba In Situ.")
+            st.stop()
 
-    if not selected_points:
-        st.info("Selecione ao menos um ponto para exibir o grafico.")
-        st.stop()
+        ctrl_cols = st.columns([2, 2, 1], gap="small")
+        selected_param = ctrl_cols[0].selectbox("Parametro", params)
+        default_points = points if len(points) <= 8 else points[:8]
+        selected_points = ctrl_cols[1].multiselect(
+            "Pontos",
+            points,
+            default=default_points,
+        )
+        date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
 
-    data = in_situ[in_situ["Ponto"].isin(selected_points)].copy()
-    data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-    data = data.dropna(subset=["Data"])
+        if not selected_points:
+            st.info("Selecione ao menos um ponto para exibir o grafico.")
+            st.stop()
+
+        data = data_source[data_source["Ponto"].isin(selected_points)].copy()
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
+    else:
+        points = []
+        if "Ponto" in data_source.columns:
+            points = sorted(data_source["Ponto"].dropna().unique().tolist())
+
+        if points:
+            ctrl_cols = st.columns([2, 2, 1], gap="small")
+            selected_param = ctrl_cols[0].selectbox("Parametro", params)
+            default_points = points if len(points) <= 3 else points[:3]
+            selected_points = ctrl_cols[1].multiselect(
+                "Pontos gerais",
+                points,
+                default=default_points,
+            )
+            date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
+            if not selected_points:
+                st.info("Selecione ao menos um ponto para exibir o grafico.")
+                st.stop()
+            data = data_source[data_source["Ponto"].isin(selected_points)].copy()
+        else:
+            ctrl_cols = st.columns([2, 1], gap="small")
+            selected_param = ctrl_cols[0].selectbox("Parametro", params)
+            date_input = ctrl_cols[1].date_input("Periodo", value=default_range)
+            data = data_source.copy()
+
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
 
     if isinstance(date_input, (list, tuple)) and len(date_input) == 2:
         start, end = date_input
@@ -1453,39 +1632,89 @@ elif subpage == "In situ":
         if end:
             data = data[data["Data"] <= pd.to_datetime(end)]
 
-    chart_df = (
-        data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
-        .reset_index()
-        .sort_values("Data")
-    )
-
-    value_cols = [c for c in chart_df.columns if c != "Data"]
-    if not value_cols:
-        st.info("Nao ha valores para o parametro selecionado nos pontos escolhidos.")
-        st.stop()
-
-    palette = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#17becf",
-    ]
-
-    series = [
-        SeriesSpec(
-            y=col,
-            label=f"{col} - {selected_param}",
-            kind="line",
-            marker="circle",
-            color=palette[i % len(palette)],
-            connect_gaps=True,
+    if mode == "Por ponto":
+        chart_df = (
+            data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
+            .reset_index()
+            .sort_values("Data")
         )
-        for i, col in enumerate(value_cols)
-    ]
+        value_cols = [c for c in chart_df.columns if c != "Data"]
+        if not value_cols:
+            st.info("Nao ha valores para o parametro selecionado nos pontos escolhidos.")
+            st.stop()
+
+        palette = [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#17becf",
+        ]
+        series = [
+            SeriesSpec(
+                y=col,
+                label=f"{col} - {selected_param}",
+                kind="line",
+                marker="circle",
+                color=palette[i % len(palette)],
+                connect_gaps=True,
+            )
+            for i, col in enumerate(value_cols)
+        ]
+    else:
+        if "Ponto" in data.columns:
+            chart_df = (
+                data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
+                .reset_index()
+                .sort_values("Data")
+            )
+            value_cols = [c for c in chart_df.columns if c != "Data"]
+            if not value_cols:
+                st.info("Nao ha valores para o parametro selecionado no In situ geral.")
+                st.stop()
+            palette = [
+                "#1f77b4",
+                "#ff7f0e",
+                "#2ca02c",
+                "#d62728",
+                "#9467bd",
+                "#8c564b",
+                "#e377c2",
+                "#17becf",
+            ]
+            series = [
+                SeriesSpec(
+                    y=col,
+                    label=f"{col} - {selected_param}",
+                    kind="line",
+                    marker="circle",
+                    color=palette[i % len(palette)],
+                    connect_gaps=True,
+                )
+                for i, col in enumerate(value_cols)
+            ]
+        else:
+            chart_df = (
+                data.groupby("Data", as_index=False)[selected_param]
+                .mean()
+                .sort_values("Data")
+            )
+            if chart_df.empty:
+                st.info("Nao ha valores para o parametro selecionado no In situ geral.")
+                st.stop()
+            series = [
+                SeriesSpec(
+                    y=selected_param,
+                    label=f"{selected_param} - In situ geral",
+                    kind="line",
+                    marker="circle",
+                    color="#8c564b",
+                    connect_gaps=True,
+                )
+            ]
 
     fig3, _ = build_time_chart_plotly(
         chart_df,
