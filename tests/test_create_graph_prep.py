@@ -2,75 +2,68 @@ import importlib
 import os
 import random
 import sys
+import types
 
 import pandas as pd
-import streamlit as st
 
 os.environ["EPA_TESTING"] = "1"
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
+if "streamlit" not in sys.modules:
+    class _DummySidebar:
+        def __enter__(self):
+            return self
 
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
-class _DummySidebar:
-    def __enter__(self):
-        return self
+        def subheader(self, *args, **kwargs):
+            return None
 
-    def __exit__(self, exc_type, exc, tb):
-        return False
+        def radio(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            return options[0] if options else None
 
-    def subheader(self, *args, **kwargs):
-        return None
+    class _DummyStreamlit:
+        def __init__(self):
+            self.session_state = {}
+            self.sidebar = _DummySidebar()
 
-    def radio(self, *args, **kwargs):
-        options = args[1] if len(args) > 1 else kwargs.get("options", [])
-        return options[0] if options else None
+        def title(self, *args, **kwargs):
+            return None
 
+        def info(self, *args, **kwargs):
+            return None
 
-class _DummyStreamlit:
-    def __init__(self):
-        self.session_state = {}
-        self.sidebar = _DummySidebar()
+        def stop(self, *args, **kwargs):
+            return None
 
-    def title(self, *args, **kwargs):
-        return None
+        def error(self, *args, **kwargs):
+            return None
 
-    def info(self, *args, **kwargs):
-        return None
+        def warning(self, *args, **kwargs):
+            return None
 
-    def stop(self, *args, **kwargs):
-        return None
+        def subheader(self, *args, **kwargs):
+            return None
 
-    def error(self, *args, **kwargs):
-        return None
+        def radio(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            return options[0] if options else None
 
-    def warning(self, *args, **kwargs):
-        return None
+        def checkbox(self, *args, **kwargs):
+            return kwargs.get("value", False)
 
-    def subheader(self, *args, **kwargs):
-        return None
+        def selectbox(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            return options[0] if options else None
 
-    def radio(self, *args, **kwargs):
-        options = args[1] if len(args) > 1 else kwargs.get("options", [])
-        return options[0] if options else None
+        def multiselect(self, *args, **kwargs):
+            default = kwargs.get("default", [])
+            return default if default else []
 
-    def checkbox(self, *args, **kwargs):
-        return kwargs.get("value", False)
-
-    def selectbox(self, *args, **kwargs):
-        options = args[1] if len(args) > 1 else kwargs.get("options", [])
-        return options[0] if options else None
-
-    def multiselect(self, *args, **kwargs):
-        default = kwargs.get("default", [])
-        return default if default else []
-
-
-if not hasattr(st, "title"):
     sys.modules["streamlit"] = _DummyStreamlit()
-    st = importlib.import_module("streamlit")
-_ = st
-
 from app.pages import create_graph as cg  # noqa: E402
 importlib.reload(cg)
 
