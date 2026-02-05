@@ -1,9 +1,10 @@
 ﻿import pandas as pd
+import plotly.express as px
 import re
 import streamlit as st
 import os
 import base64
-import time 
+import time
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
 from services.dataset_service import build_dataset_from_excels
@@ -37,7 +38,6 @@ if os.path.exists(logo_path):
         icon_image=logo_bytes,
     )
 
-# ================== SESSION STATE ==================
 init_session_state()
 
 # ================== SPLASH SCREEN (2s) ==================
@@ -98,9 +98,9 @@ def _process_upload(uploaded_files):
         st.session_state.pop("df_dict_by_file", None)
     skipped_charts = [s for s in result.skipped if s.has_charts]
     if skipped_charts:
-        st.success(f"Excel operacional carregado: {len(skipped_charts)} abas de grafico ignoradas.")
+        st.success(f"Excel operacional carregado: {len(skipped_charts)} abas de gráfico ignoradas.")
     else:
-        st.success("Excel operacional carregado: nenhuma aba de grafico ignorada.")
+        st.success("Excel operacional carregado: nenhuma aba de gráfico ignorada.")
 
 
 def _norm_text(value: object) -> str:
@@ -149,6 +149,41 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
         period_months = 0
         period_label = "Sem datas válidas"
 
+    def _row_has_seco(row: pd.Series) -> bool:
+        check_cols = ["NA (m)", "NO (m)", "FL (m)", "Status", "Observacao", "Observação"]
+        for col in check_cols:
+            if col not in row:
+                continue
+            v = row.get(col)
+            if pd.isna(v):
+                continue
+            if "seco" in _norm_text(v):
+                return True
+        return False
+
+    last_rows = df.sort_values("Data").groupby("poco_key", as_index=False).tail(1)
+    last_rows["is_dry"] = last_rows.apply(_row_has_seco, axis=1)
+    dry_count = int(last_rows["is_dry"].sum())
+    normal_count = max(0, int(last_rows.shape[0]) - dry_count)
+
+    df["tipo_poco"] = df["poco_key"].map(lambda x: str(x)[:2] if x else "")
+    type_counts = (
+        df[df["tipo_poco"] != ""]
+        .drop_duplicates(subset=["poco_key"])
+        .groupby("tipo_poco")["poco_key"]
+        .count()
+        .reset_index()
+        .rename(columns={"poco_key": "quantidade"})
+    )
+
+    measurements_by_month = (
+        df.assign(Mes=df["Data"].dt.to_period("M").astype(str))
+        .groupby("Mes")["has_measure"]
+        .sum()
+        .reset_index()
+        .rename(columns={"has_measure": "Amostras"})
+    )
+
     st.subheader("Resumo Operacional")
 
     left, right = st.columns(2)
@@ -156,8 +191,73 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
     with left:
         st.metric("Período", f"{period_months} meses", period_label)
         st.metric("Amostras de NA", f"{total_samples} medições")
+        if not measurements_by_month.empty:
+            fig_month = px.bar(
+                measurements_by_month,
+                x="Mes",
+                y="Amostras",
+                title="Amostras por mês",
+            )
+            fig_month.update_layout(
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=22, color="#000"),
+                legend=dict(font=dict(size=16, color="#000")),
+                font=dict(color="#000"),
+                title=dict(pad=dict(t=16, b=8)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            fig_month.update_xaxes(
+                tickfont=dict(color="#000"),
+                title_font=dict(color="#000"),
+            )
+            fig_month.update_yaxes(
+                tickfont=dict(color="#000"),
+                title_font=dict(color="#000"),
+            )
+            st.plotly_chart(fig_month, use_container_width=True)
 
     with right:
+        dry_df = pd.DataFrame(
+            {"Status": ["Seco", "Normal"], "Quantidade": [dry_count, normal_count]}
+        )
+        fig_dry = px.pie(
+            dry_df,
+            names="Status",
+            values="Quantidade",
+            hole=0.45,
+            title="Poços na última medição",
+        )
+        fig_dry.update_layout(
+            margin=dict(l=20, r=20, t=70, b=30),
+            title_font=dict(size=22, color="#000"),
+            legend=dict(font=dict(size=16, color="#000")),
+            font=dict(color="#000"),
+            title=dict(pad=dict(t=16, b=8)),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_dry, use_container_width=True)
+
+        if not type_counts.empty:
+            fig_types = px.pie(
+                type_counts,
+                names="tipo_poco",
+                values="quantidade",
+                hole=0.4,
+                title="Tipos de poços (prefixo)",
+            )
+            fig_types.update_layout(
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=22, color="#000"),
+                legend=dict(font=dict(size=16, color="#000")),
+                font=dict(color="#000"),
+                title=dict(pad=dict(t=16, b=8)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig_types, use_container_width=True)
+
         st.info("Gráficos adicionais carregados após processamento.")
 
 # ================== SIDEBAR ==================
@@ -191,4 +291,3 @@ if isinstance(df_dict, dict):
             st.switch_page("pages/create_graph.py")
         except Exception:
             st.error("Erro ao abrir página de gráficos.")
-

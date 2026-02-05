@@ -1,6 +1,13 @@
 /* ================= RESET / BASE ================= */
+:root {
+    --page-bg: #000000;
+    --card-bg: #ffffff;
+    --text-color: #000000;
+}
+
 html, body, [class*="css"] {
     font-family: "Inter", "Segoe UI", sans-serif;
+    color: var(--text-color);
 }
 
 /* ================= LAYOUT GERAL ================= */
@@ -11,7 +18,7 @@ html, body, [class*="css"] {
     overflow: auto;
     align-items: center;
     height: 100dvh;
-    background: black;
+    background: var(--page-bg);
 }
 
 /* ================= HEADER / TOPBAR ================= */
@@ -54,7 +61,7 @@ html, body, [class*="css"] {
     width: 100%;
     padding: 6rem 1rem 10rem;
     max-width: initial;
-    background: #000000;
+    background: var(--page-bg);
 }
 
 .st-emotion-cache-1k9kca4 {
@@ -144,8 +151,7 @@ section[data-testid="stSidebar"] h3 {
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-    border: 1px solid #e5e7eb;
-    background: white;
+    background: var(--card-bg);
 }
 
 /* ================= FILE UPLOADER ================= */
