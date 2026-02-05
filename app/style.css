@@ -1,0 +1,179 @@
+/* ================= RESET / BASE ================= */
+:root {
+    --page-bg: #000000;
+    --card-bg: #ffffff;
+    --text-color: #000000;
+}
+
+html, body, [class*="css"] {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    color: var(--text-color);
+}
+
+/* ================= LAYOUT GERAL ================= */
+.st-emotion-cache-4rsbii {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: auto;
+    align-items: center;
+    height: 100dvh;
+    background: var(--page-bg);
+}
+
+/* ================= HEADER / TOPBAR ================= */
+.st-emotion-cache-1s6ol36 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    height: 3.75rem;
+    min-height: 3.75rem;
+    width: 100%;
+    background: #000000;
+    z-index: 999990;
+    font-size: 0.875rem;
+}
+
+.st-emotion-cache-14vh5up {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0;
+    position: relative;
+    z-index: 999990;
+}
+
+.st-emotion-cache-1wxyy64 {
+    height: 40px;
+    margin: 0.25rem 0;
+    object-fit: contain;
+    object-position: left center;
+    max-width: 100%;
+    z-index: 999990;
+}
+
+/* ================= CONTAINER PRINCIPAL ================= */
+.st-emotion-cache-zy6yx3 {
+    width: 100%;
+    padding: 6rem 1rem 10rem;
+    max-width: initial;
+    background: var(--page-bg);
+}
+
+.st-emotion-cache-1k9kca4 {
+    display: flex;
+    gap: 1rem;
+    -webkit-box-align: center;
+    align-items: center;
+    padding: 1rem;
+    background-color: #004d44;
+    border-radius: 0.5rem;
+    height: 4.25rem;
+    cursor: pointer;
+}
+
+/* ================= SPLASH SCREEN ================= */
+.splash-container {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #000000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.splash-logo {
+    width: 300px;
+    animation: pulse 2s infinite;
+}
+
+/* ================= SIDEBAR ================= */
+section[data-testid="stSidebar"] {
+    background-color: #004d44;
+}
+
+section[data-testid="stSidebar"] * {
+    color: #f8fafc;
+}
+
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* ================= BOTÕES ================= */
+.stButton > button {
+    border-radius: 10px;
+    font-weight: 600;
+    padding: 0.6rem 1rem;
+    border: none;
+    background: linear-gradient(135deg, #004d44, #b7c0dd);
+    color: white;
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #004d44, #b7c0dd);
+    box-shadow: 0 6px 18px rgba(0, 77, 68, 0.25);
+}
+
+/* ================= MÉTRICAS ================= */
+[data-testid="stMetric"] {
+    background: #f8fafc;
+    border-radius: 14px;
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 4px 12px rgba(104, 104, 104, 0.04);
+}
+
+[data-testid="stMetricLabel"] {
+    color: #475569;
+    font-weight: 500;
+}
+
+[data-testid="stMetricValue"] {
+    color: #000000;
+    font-weight: 700;
+}
+
+/* ================= GRÁFICOS ================= */
+.js-plotly-plot {
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    background: var(--card-bg);
+}
+
+/* ================= FILE UPLOADER ================= */
+[data-testid="stFileUploader"] {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* ================= ALERTAS ================= */
+.stAlert {
+    border-radius: 12px;
+}
+
+/* ================= ANIMAÇÕES ================= */
+@keyframes fadeZoom {
+    0% {
+        opacity: 0;
+        transform: scale(0.85);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
