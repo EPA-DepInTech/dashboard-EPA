@@ -72,6 +72,9 @@ def _process_upload(uploaded_files):
     if not uploaded_files:
         return
 
+    # mantém referência aos uploads originais (para leitura dedicada em abas específicas)
+    st.session_state["uploaded_files"] = uploaded_files
+
     set_uploaded_file(uploaded_files)
     result = build_dataset_from_excels(uploaded_files)
 
@@ -81,8 +84,25 @@ def _process_upload(uploaded_files):
             st.write("-", e)
         return
 
-    st.session_state["df_dict"] = result.df_dict
-    st.success("Excel operacional carregado com sucesso!")
+    st.session_state["df_dict"] = result.df_dict  # padronizado
+    # guarda datasets por arquivo para permitir seleção na página de gráficos
+    df_dict_by_file: dict[str, dict] = {}
+    for f in uploaded_files:
+        single = build_dataset_from_excels([f])
+        if single.errors:
+            continue
+        name = getattr(f, "name", f"arquivo_{len(df_dict_by_file)+1}")
+        df_dict_by_file[name] = single.df_dict or {}
+    if df_dict_by_file:
+        st.session_state["df_dict_by_file"] = df_dict_by_file
+    else:
+        st.session_state.pop("df_dict_by_file", None)
+    skipped_charts = [s for s in result.skipped if s.has_charts]
+    if skipped_charts:
+        st.success(f"Excel operacional carregado: {len(skipped_charts)} abas de grafico ignoradas.")
+    else:
+        st.success("Excel operacional carregado: nenhuma aba de grafico ignorada.")
+
 
 def _norm_text(value: object) -> str:
     s = str(value).strip().lower()

@@ -6,6 +6,7 @@ import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
 from services.date_num_prep import normalize_dates, parse_ptbr_number
+from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
 
 def _norm_key(value: object) -> str:
@@ -226,6 +227,34 @@ def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
 def _get_poco_col(df: pd.DataFrame) -> str | None:
     return _find_col(df, ["poco"]) or _find_col(df, ["ponto"])
 
+
+def _looks_like_in_situ_aprofundado_df(df: pd.DataFrame) -> bool:
+    """Heuristica para identificar planilha de in situ detalhado, mesmo sem coluna Data explícita."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return False
+    poco_col = _get_poco_col(df) or _find_col(df, ["id", "poco"]) or _find_col(df, ["id", "ponto"])
+    if not poco_col:
+        return False
+    def _is_numeric_like(series: pd.Series) -> bool:
+        if not isinstance(series, pd.Series):
+            return False
+        sample = series.dropna().head(30)
+        if sample.empty:
+            return False
+        try:
+            parsed = sample.map(parse_ptbr_number)
+            return parsed.notna().mean() >= 0.4
+        except Exception:
+            return False
+
+    numeric_cols = [
+        c
+        for c in df.columns
+        if c not in {"Data", "Ponto", poco_col, "Hora"} and _is_numeric_like(df[c])
+    ]
+    # aceita se houver pelo menos dois parâmetros numéricos (pH, Temp, ORP, OD, Cond, etc.)
+    return len(numeric_cols) >= 2
+
 def prep_vol_bombeado(vol_bombeado: pd.DataFrame) -> pd.DataFrame:
     df = normalize_dates(vol_bombeado, "Data")
     hm_col = _find_col(df, ["hidrometro", "manha"])
@@ -346,6 +375,69 @@ def prep_in_situ(in_situ: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def prep_in_situ_aprofundado(in_situ: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza a planilha de In situ aprofundado para formato longo:
+    colunas esperadas: Data, Poco/Ponto, Parametro*, Valor* (ou colunas numericas a serem derretidas).
+    """
+    df = normalize_dates(in_situ, "Data")
+    poco_col = _get_poco_col(df) or ("Ponto" if "Ponto" in df.columns else None)
+    if poco_col and poco_col != "Ponto":
+        df = df.rename(columns={poco_col: "Ponto"})
+    if "Ponto" not in df.columns:
+        df["Ponto"] = pd.NA
+    df["Ponto"] = df["Ponto"].astype(str).str.strip().str.upper()
+
+    # Hora não é usada no eixo, mas pode existir; mantemos para referência opcional
+    if "Hora" in df.columns:
+        df["Hora"] = df["Hora"].astype(str).str.strip()
+
+    param_col = None
+    value_col = None
+    for col in df.columns:
+        n = _norm_key(col)
+        if param_col is None and (n.startswith("param") or "parametro" in n or "parameter" in n):
+            param_col = col
+        if value_col is None and any(tok in n for tok in ["valor", "value", "resultado", "medicao", "medida", "dados"]):
+            value_col = col
+
+    if param_col and value_col:
+        long_df = df.rename(columns={param_col: "Parametro", value_col: "Valor"})
+        long_df["Valor"] = long_df["Valor"].map(parse_ptbr_number)
+        long_df = long_df[["Data", "Ponto", "Parametro", "Valor"]]
+    else:
+        def _is_numeric_like(series: pd.Series) -> bool:
+            if not isinstance(series, pd.Series):
+                return False
+            sample = series.dropna().head(30)
+            if sample.empty:
+                return False
+            try:
+                parsed = sample.map(parse_ptbr_number)
+                return parsed.notna().mean() >= 0.4
+            except Exception:
+                return False
+
+        numeric_cols = [
+            c
+            for c in df.columns
+            if c not in {"Data", "Ponto", "Hora"} and not _norm_key(c).startswith("obs") and _is_numeric_like(df[c])
+        ]
+        if not numeric_cols:
+            return pd.DataFrame(columns=["Data", "Ponto", "Parametro", "Valor"])
+        long_df = df.melt(
+            id_vars=["Data", "Ponto"],
+            value_vars=numeric_cols,
+            var_name="Parametro",
+            value_name="Valor",
+        )
+        long_df["Valor"] = long_df["Valor"].map(parse_ptbr_number)
+
+    long_df["Parametro"] = long_df["Parametro"].astype(str).str.strip()
+    long_df = long_df.dropna(subset=["Data"])
+    return long_df
+
+
 def build_na_pr_vs_infiltrado(na: pd.DataFrame, vi: pd.DataFrame) -> pd.DataFrame:
     if "Data" not in na.columns or "na_val" not in na.columns or "entity_key" not in na.columns:
         na_pr = pd.DataFrame(columns=["Data", "na_val"])
@@ -437,6 +529,44 @@ def build_point_series(
 st.title("NA e Volume - Visualizacoes")
 
 df_dict = st.session_state.get("df_dict")
+df_by_file = st.session_state.get("df_dict_by_file")
+selected_na_file = None
+selected_insitu_file = None
+in_situ_aprofundado = None
+
+def _copy_keys(src: dict, keys: list[str], dest: dict):
+    for k in keys:
+        if src and k in src:
+            dest[k] = src[k]
+
+if isinstance(df_by_file, dict) and df_by_file:
+    na_candidates = [f for f, d in df_by_file.items() if d and any(k in d for k in ("NA Semanal", "Volume Bombeado", "Volume Infiltrado"))]
+    insitu_candidates = [f for f, d in df_by_file.items()]
+    with st.sidebar:
+        st.subheader("Arquivos fonte")
+        if na_candidates:
+            selected_na_file = st.selectbox("Arquivo para NA/Volume", na_candidates, index=0, key="sel_na_file")
+        if insitu_candidates:
+            default_insitu_idx = 0
+            if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
+                default_insitu_idx = 1
+            selected_insitu_file = st.selectbox("Arquivo para In situ", insitu_candidates, index=default_insitu_idx, key="sel_insitu_file")
+
+    if selected_na_file or selected_insitu_file:
+        combined: dict[str, pd.DataFrame] = {}
+        if selected_na_file and selected_na_file in df_by_file:
+            src = df_by_file[selected_na_file]
+            _copy_keys(src, ["Volume Bombeado", "Volume Infiltrado", "NA Semanal"], combined)
+        if selected_insitu_file and selected_insitu_file in df_by_file:
+            src = df_by_file[selected_insitu_file]
+            _copy_keys(src, ["In Situ (Pontos)", "In Situ", "In Situ (Geral)"], combined)
+        # fallback: se não houver df_by_file (ou nada selecionado), mantém o global
+        if df_dict and isinstance(df_dict, dict):
+            for k, v in df_dict.items():
+                if k not in combined:
+                    combined[k] = v
+        df_dict = combined
+
 if df_dict is None or not isinstance(df_dict, dict):
     st.info("Arquivo foi carregado, mas ainda nao ha dataset em memoria.")
     st.stop()
@@ -475,6 +605,8 @@ if "In Situ (Geral)" in df_dict:
 subpage_options = ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"]
 if in_situ_pontos is not None or in_situ_geral is not None:
     subpage_options.append("In situ")
+# deixa sempre visível; se faltar dado, mostra orientação dentro da aba
+subpage_options.append("In situ aprofundado")
 
 with st.sidebar:
     st.subheader("Abas")
@@ -1552,6 +1684,144 @@ elif subpage == "Visualizacao aprofundada":
             fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
         st.plotly_chart(fig2, use_container_width=True)
+elif subpage == "In situ aprofundado":
+    st.subheader("In situ aprofundado")
+
+    uploaded_files = st.session_state.get("uploaded_files", [])
+    file_obj = None
+    if uploaded_files and selected_insitu_file:
+        for f in uploaded_files:
+            if getattr(f, "name", "") == selected_insitu_file:
+                file_obj = f
+                break
+
+    if file_obj is None:
+        st.info("Selecione um arquivo em 'Arquivo para In situ' na barra lateral.")
+        st.stop()
+
+    try:
+        df_long = read_in_situ_excel(file_obj)
+    except Exception as e:
+        st.error(f"Falha ao ler o arquivo selecionado: {e}")
+        st.stop()
+
+    if df_long.empty:
+        st.info("Arquivo de In situ aprofundado vazio ou não reconhecido.")
+        st.stop()
+
+    # remove linhas agregadas/estatísticas eventualmente não filtradas
+    df_long = df_long[
+        ~df_long["poco_id"].str.contains(r"max|máx|min|média|media", case=False, regex=True)
+    ]
+
+    parametros = sorted(df_long["parametro"].dropna().unique().tolist())
+    if not parametros:
+        st.info("Nenhum parâmetro identificado no arquivo de In situ.")
+        st.stop()
+
+    date_min = df_long["DataHora"].min()
+    date_max = df_long["DataHora"].max()
+    default_range = None
+    if pd.notna(date_min) and pd.notna(date_max):
+        start_default = max(date_min, date_max - pd.Timedelta(days=365))
+        default_range = (start_default.date(), date_max.date())
+
+    ctrl_cols = st.columns([2, 2, 2, 1], gap="small")
+    param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
+    param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", ["(nenhum)"] + parametros, index=0)
+    pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
+    default_pontos: list[str] = []
+    if default_range:
+        start_d, end_d = default_range
+        df_default = df_long.copy()
+        if start_d:
+            df_default = df_default[df_default["DataHora"] >= pd.to_datetime(start_d)]
+        if end_d:
+            df_default = df_default[df_default["DataHora"] <= pd.to_datetime(end_d)]
+        pontos_com_dados = sorted(df_default["poco_id"].dropna().unique().tolist())
+        if pontos_com_dados:
+            default_pontos = [pontos_com_dados[0]]
+    if not default_pontos and pontos:
+        default_pontos = [pontos[0]]
+    pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
+    periodo = ctrl_cols[3].date_input("Período", value=default_range)
+
+    data_filt = df_long.copy()
+    if pontos_sel:
+        data_filt = data_filt[data_filt["poco_id"].isin(pontos_sel)]
+    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
+        start, end = periodo
+        if start:
+            data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(start)]
+        if end:
+            data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(end)]
+
+    df_plot1 = pivot_in_situ_for_plot(data_filt, param1)
+    if df_plot1.empty:
+        st.info("Sem valores numéricos para o parâmetro selecionado.")
+        st.stop()
+
+    series: list[SeriesSpec] = []
+    palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#17becf",
+    ]
+    for idx, col in enumerate([c for c in df_plot1.columns if c != "DataHora"]):
+        series.append(
+            SeriesSpec(
+                y=col,
+                label=f"{col} - {param1}",
+                kind="bar",
+                color=palette[idx % len(palette)],
+                axis="y",
+            )
+        )
+
+    df_plot = df_plot1
+    if param2 != "(nenhum)":
+        df_plot2 = pivot_in_situ_for_plot(data_filt, param2)
+        if not df_plot2.empty:
+            df_plot = df_plot1.merge(df_plot2, on="DataHora", how="outer")
+            for idx, col in enumerate([c for c in df_plot2.columns if c != "DataHora"]):
+                series.append(
+                    SeriesSpec(
+                        y=col,
+                        label=f"{col} - {param2}",
+                        kind="bar",
+                        color=palette[(idx + 3) % len(palette)],
+                        axis="y2",
+                    )
+                )
+
+    fig_ap, _ = build_time_chart_plotly(
+        df_plot,
+        x="DataHora",
+        series=series,
+        title="In situ aprofundado",
+        show_range_slider=False,
+        limit_points=200000,
+    )
+    fig_ap.update_layout(barmode="group", bargap=0.1, bargroupgap=0.05)
+    fig_ap.update_xaxes(title_text="Data / Hora")
+    fig_ap.update_yaxes(title_text=param1, secondary_y=False)
+    if any(s.axis == "y2" for s in series):
+        fig_ap.update_yaxes(title_text=param2, secondary_y=True)
+    st.plotly_chart(fig_ap, use_container_width=True)
+
+    with st.expander("Tabela detalhada", expanded=False):
+        st.dataframe(
+            data_filt[["DataHora", "poco_id", "parametro", "valor", "status", "sheet"]]
+            .sort_values("DataHora"),
+            use_container_width=True,
+            hide_index=True,
+        )
+
 elif subpage == "In situ":
     st.subheader("In situ")
 
