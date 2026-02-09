@@ -57,6 +57,10 @@ def _standardize_sheet_key(sheet_name: str) -> str:
     n = _norm(sheet_name)
     if "na semanal" in n:
         return "NA Semanal"
+    if "in situ" in n and "aprofund" in n:
+        return "In Situ Aprofundado"
+    if "analise in situ" in n or "anÃ¡lise in situ" in n:
+        return "In Situ Aprofundado"
     if "in situ" in n or "insitu" in n:
         return "In Situ"
     if "bombeado" in n:
@@ -64,6 +68,21 @@ def _standardize_sheet_key(sheet_name: str) -> str:
     if "infiltrado" in n:
         return "Volume Infiltrado"
     return sheet_name
+
+
+def _looks_like_in_situ_aprofundado(df: pd.DataFrame) -> bool:
+    """Detecta planilhas com colunas de poço + data + parâmetros típicos de in situ."""
+    if _is_empty_df(df):
+        return False
+    norm_cols = {_norm_colname(c): c for c in df.columns}
+    has_point = any("poco" in n or "ponto" in n for n in norm_cols)
+    has_date = any("data" in n for n in norm_cols)
+    param_tokens = ["na", "ph", "orp", "od", "cond", "condut", "temp", "temperatura"]
+    param_hits = [
+        c for n, c in norm_cols.items()
+        if any(tok in n for tok in param_tokens)
+    ]
+    return has_point and has_date and len(param_hits) >= 2
 
 
 def _classify_in_situ_df(df: pd.DataFrame) -> str:
@@ -870,6 +889,10 @@ def build_dataset_from_excel(uploaded_file) -> DatasetResult:
                 )
                 continue
 
+            # reclassifica automaticamente se parece ser In Situ aprofundado
+            if std_key == sheet_name and _looks_like_in_situ_aprofundado(df):
+                std_key = "In Situ Aprofundado"
+
             df_dict[std_key] = df
 
         except Exception as e:
@@ -915,6 +938,7 @@ def build_dataset_from_excels(uploaded_files) -> DatasetResult:
     grouped: dict[str, list[pd.DataFrame]] = {}
     in_situ_pontos: list[pd.DataFrame] = []
     in_situ_geral: list[pd.DataFrame] = []
+    in_situ_aprofundado: list[pd.DataFrame] = []
 
     for uploaded_file in uploaded_files:
         result = build_dataset_from_excel(uploaded_file)
@@ -942,6 +966,11 @@ def build_dataset_from_excels(uploaded_files) -> DatasetResult:
                 else:
                     in_situ_pontos.append(df_copy)
                 continue
+            if key == "In Situ Aprofundado":
+                if df is None or df.empty:
+                    continue
+                in_situ_aprofundado.append(df.copy())
+                continue
 
             grouped.setdefault(key, []).append(df)
 
@@ -956,6 +985,8 @@ def build_dataset_from_excels(uploaded_files) -> DatasetResult:
         merged["In Situ (Pontos)"] = _merge_df_list(in_situ_pontos)
     if in_situ_geral:
         merged["In Situ (Geral)"] = _merge_df_list(in_situ_geral)
+    if in_situ_aprofundado:
+        merged["In Situ Aprofundado"] = _merge_df_list(in_situ_aprofundado)
 
     if not merged:
         errors.append("Nenhuma aba tabular foi encontrada (ou todas foram ignoradas).")
