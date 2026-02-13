@@ -2,7 +2,6 @@ import importlib
 import os
 import random
 import sys
-import types
 
 import pandas as pd
 
@@ -25,10 +24,35 @@ if "streamlit" not in sys.modules:
             options = args[1] if len(args) > 1 else kwargs.get("options", [])
             return options[0] if options else None
 
+    class _DummyColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def button(self, *args, **kwargs):
+            return False
+
+        def selectbox(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            return options[0] if options else None
+
+        def multiselect(self, *args, **kwargs):
+            default = kwargs.get("default", [])
+            return default if default else []
+
+        def date_input(self, *args, **kwargs):
+            return kwargs.get("value")
+
+        def radio(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            return options[0] if options else None
+
     class _DummyStreamlit:
         def __init__(self):
             self.session_state = {}
-            self.sidebar = _DummySidebar()
+            self.sidebar = _DummySidebar() 
 
         def title(self, *args, **kwargs):
             return None
@@ -62,6 +86,23 @@ if "streamlit" not in sys.modules:
         def multiselect(self, *args, **kwargs):
             default = kwargs.get("default", [])
             return default if default else []
+
+        def button(self, *args, **kwargs):
+            return False
+
+        def date_input(self, *args, **kwargs):
+            return kwargs.get("value")
+
+        def plotly_chart(self, *args, **kwargs):
+            return None
+
+        def columns(self, *args, **kwargs):
+            spec = args[0] if args else kwargs.get("spec", 1)
+            if isinstance(spec, int):
+                n = spec
+            else:
+                n = len(spec)
+            return [_DummyColumn() for _ in range(n)]
 
     sys.modules["streamlit"] = _DummyStreamlit()
 from app.pages import create_graph as cg  # noqa: E402
