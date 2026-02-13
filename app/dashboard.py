@@ -2,35 +2,71 @@
 import plotly.express as px
 import re
 import streamlit as st
-import time 
+import os
+import base64
+import time
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
 from services.dataset_service import build_dataset_from_excels
-from PIL import Image
 
-#=========== Configurações da página ============
-st.set_page_config(
-    page_title="Dashboard - Grupo EPA",page_icon='🌳',layout="wide")
+# ================== CONFIG ==================
+st.set_page_config(page_title="Dashboard - Grupo EPA", layout="wide")
 
-# ===== Splash Screen (executa só uma vez por sessão) =====
-if "splash_done" not in st.session_state:
-    st.session_state.splash_done = True
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSS_PATH = os.path.join(BASE_DIR, "style.css")
+logo_path = os.path.join(BASE_DIR, "epa_logo.png")
 
-    logo = Image.open("app/logo.png")
-    placeholder = st.empty()
+# ================== FUNÇÕES ==================
+def load_image_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
-    with placeholder.container():
-        st.markdown("##")  # espaçamento
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col2:
-            st.image(logo, width=350)
+# ================== CSS ==================
+if os.path.exists(CSS_PATH):
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+else:
+    st.warning(f"CSS não encontrado em: {CSS_PATH}")
 
-    time.sleep(2.5)
+# ================== LOGO ==================
+if os.path.exists(logo_path):
+    with open(logo_path, "rb") as f:
+        logo_bytes = f.read()
 
-    placeholder.empty()
-#=========== Título da página ============
-st.title("Dashboard Operacional - Grupo EPA")
+    st.logo(
+        logo_bytes,
+        icon_image=logo_bytes,
+    )
 
+init_session_state()
+
+# ================== SPLASH SCREEN (2s) ==================
+if "splash_shown" not in st.session_state:
+    st.session_state["splash_shown"] = False
+
+if not st.session_state["splash_shown"]:
+    if os.path.exists(logo_path):
+        logo_b64 = load_image_base64(logo_path)
+
+        splash_html = f"""
+        <div class="splash-container">
+            <img src="data:image/png;base64,{logo_b64}" class="splash-logo" />
+        </div>
+        <div data-testid="stSidebarContent" 
+        class="st-emotion-cache-155jwzh"></div>
+        """
+        placeholder = st.empty()
+        placeholder.markdown(splash_html, unsafe_allow_html=True)
+        time.sleep(2)
+        placeholder.empty()
+
+    st.session_state["splash_shown"] = True
+    st.rerun()
+
+# ================== TÍTULO ==================
+st.title("📊 Dashboard de Amostras")
+
+# ================== HELPERS ==================
 def _process_upload(uploaded_files):
     if not uploaded_files:
         return
@@ -44,8 +80,25 @@ def _process_upload(uploaded_files):
             st.write("-", e)
         return
 
-    st.session_state["df_dict"] = result.df_dict
-    st.success("Excel operacional carregado com sucesso!")
+    st.session_state["df_dict"] = result.df_dict  # padronizado
+    # guarda datasets por arquivo para permitir seleção na página de gráficos
+    df_dict_by_file: dict[str, dict] = {}
+    for f in uploaded_files:
+        single = build_dataset_from_excels([f])
+        if single.errors:
+            continue
+        name = getattr(f, "name", f"arquivo_{len(df_dict_by_file)+1}")
+        df_dict_by_file[name] = single.df_dict or {}
+    if df_dict_by_file:
+        st.session_state["df_dict_by_file"] = df_dict_by_file
+    else:
+        st.session_state.pop("df_dict_by_file", None)
+    skipped_charts = [s for s in result.skipped if s.has_charts]
+    if skipped_charts:
+        st.success(f"Excel operacional carregado: {len(skipped_charts)} abas de gráfico ignoradas.")
+    else:
+        st.success("Excel operacional carregado: nenhuma aba de gráfico ignorada.")
+
 
 def _norm_text(value: object) -> str:
     s = str(value).strip().lower()
@@ -93,6 +146,41 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
         period_months = 0
         period_label = "Sem datas válidas"
 
+    def _row_has_seco(row: pd.Series) -> bool:
+        check_cols = ["NA (m)", "NO (m)", "FL (m)", "Status", "Observacao", "Observação"]
+        for col in check_cols:
+            if col not in row:
+                continue
+            v = row.get(col)
+            if pd.isna(v):
+                continue
+            if "seco" in _norm_text(v):
+                return True
+        return False
+
+    last_rows = df.sort_values("Data").groupby("poco_key", as_index=False).tail(1)
+    last_rows["is_dry"] = last_rows.apply(_row_has_seco, axis=1)
+    dry_count = int(last_rows["is_dry"].sum())
+    normal_count = max(0, int(last_rows.shape[0]) - dry_count)
+
+    df["tipo_poco"] = df["poco_key"].map(lambda x: str(x)[:2] if x else "")
+    type_counts = (
+        df[df["tipo_poco"] != ""]
+        .drop_duplicates(subset=["poco_key"])
+        .groupby("tipo_poco")["poco_key"]
+        .count()
+        .reset_index()
+        .rename(columns={"poco_key": "quantidade"})
+    )
+
+    measurements_by_month = (
+        df.assign(Mes=df["Data"].dt.to_period("M").astype(str))
+        .groupby("Mes")["has_measure"]
+        .sum()
+        .reset_index()
+        .rename(columns={"has_measure": "Amostras"})
+    )
+
     st.subheader("Resumo Operacional")
 
     left, right = st.columns(2)
@@ -100,8 +188,73 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
     with left:
         st.metric("Período", f"{period_months} meses", period_label)
         st.metric("Amostras de NA", f"{total_samples} medições")
+        if not measurements_by_month.empty:
+            fig_month = px.bar(
+                measurements_by_month,
+                x="Mes",
+                y="Amostras",
+                title="Amostras por mês",
+            )
+            fig_month.update_layout(
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=22, color="#000"),
+                legend=dict(font=dict(size=16, color="#000")),
+                font=dict(color="#000"),
+                title=dict(pad=dict(t=16, b=8)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            fig_month.update_xaxes(
+                tickfont=dict(color="#000"),
+                title_font=dict(color="#000"),
+            )
+            fig_month.update_yaxes(
+                tickfont=dict(color="#000"),
+                title_font=dict(color="#000"),
+            )
+            st.plotly_chart(fig_month, use_container_width=True)
 
     with right:
+        dry_df = pd.DataFrame(
+            {"Status": ["Seco", "Normal"], "Quantidade": [dry_count, normal_count]}
+        )
+        fig_dry = px.pie(
+            dry_df,
+            names="Status",
+            values="Quantidade",
+            hole=0.45,
+            title="Poços na última medição",
+        )
+        fig_dry.update_layout(
+            margin=dict(l=20, r=20, t=70, b=30),
+            title_font=dict(size=22, color="#000"),
+            legend=dict(font=dict(size=16, color="#000")),
+            font=dict(color="#000"),
+            title=dict(pad=dict(t=16, b=8)),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_dry, use_container_width=True)
+
+        if not type_counts.empty:
+            fig_types = px.pie(
+                type_counts,
+                names="tipo_poco",
+                values="quantidade",
+                hole=0.4,
+                title="Tipos de poços (prefixo)",
+            )
+            fig_types.update_layout(
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=22, color="#000"),
+                legend=dict(font=dict(size=16, color="#000")),
+                font=dict(color="#000"),
+                title=dict(pad=dict(t=16, b=8)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig_types, use_container_width=True)
+
         st.info("Gráficos adicionais carregados após processamento.")
 
 # ================== SIDEBAR ==================

@@ -60,9 +60,42 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build (no push)
+      # 1) Builda e CARREGA a imagem no Docker local do runner (importante!)
+      - name: Build (load locally)
         uses: docker/build-push-action@v6
         with:
           context: .
+          load: true
           push: false
           tags: local/test:pr
+
+      # 2) Sobe o container
+      - name: Run container
+        run: |
+          docker run -d --name st-smoke \
+            -p 8501:8501 \
+            local/test:pr
+
+      # 3) Espera health check do Streamlit responder
+      - name: Smoke test (Streamlit health)
+        run: |
+          set -e
+          echo "Waiting for Streamlit..."
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health > /dev/null; then
+              echo "Streamlit is healthy ✅"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Streamlit did not become healthy ❌"
+          echo "Container logs:"
+          docker logs st-smoke || true
+          exit 1
+
+      # 4) Sempre derruba o container (mesmo se falhar)
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f st-smoke || true

@@ -1,0 +1,93 @@
+name: Release -> Build + Deploy (ECS)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  AWS_REGION: sa-east-1
+  ECS_CLUSTER: "dashboard-cluster"
+  ECS_SERVICE: "task-dashboard-ct-service-tpkifak4" 
+  TASK_FAMILY: "task-dashboard-ct"
+  CONTAINER_NAME: "ST-Dashboard"
+  IMAGE_REPO: "ghcr.io/epa-depintech/dashboard-epa"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image (tag = release)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ github.ref_name }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::226784257234:role/GitHubActionsEcsDeploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fetch current task definition and render new revision
+        id: render
+        run: |
+          set -euo pipefail
+
+          aws ecs describe-task-definition \
+            --task-definition "${TASK_FAMILY}" \
+            --query "taskDefinition" \
+            --output json > taskdef-full.json
+
+          jq 'del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )' taskdef-full.json > taskdef.json
+
+          NEW_IMAGE="${IMAGE_REPO}:${GITHUB_REF_NAME}"
+
+          jq --arg CN "${CONTAINER_NAME}" --arg IMG "${NEW_IMAGE}" '
+            .containerDefinitions |= map(
+              if .name == $CN then .image = $IMG else . end
+            )
+          ' taskdef.json > taskdef-rendered.json
+
+          echo "NEW_IMAGE=$NEW_IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Register new task definition revision
+        id: register
+        run: |
+          set -euo pipefail
+          OUT=$(aws ecs register-task-definition --cli-input-json file://taskdef-rendered.json)
+          ARN=$(echo "$OUT" | jq -r '.taskDefinition.taskDefinitionArn')
+          echo "TASKDEF_ARN=$ARN" >> $GITHUB_OUTPUT
+          echo "Registered: $ARN"
+
+      - name: Update ECS service to new task definition
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "${{ steps.register.outputs.TASKDEF_ARN }}" \
+            --force-new-deployment
