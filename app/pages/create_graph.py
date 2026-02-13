@@ -9,7 +9,6 @@ from charts.builder import SeriesSpec, build_time_chart_plotly
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
-
     
 def apply_graph_theme(fig):
     theme = st.session_state.get('graph_theme', 'light')
@@ -60,7 +59,6 @@ def apply_graph_theme(fig):
                 '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
             ],
         )
-        fig.update_layout(**dark_layout)
     else:
         light_layout = dict(
             template='plotly_white',
@@ -920,13 +918,12 @@ elif subpage == "Visualizacao aprofundada":
         if "point_index" not in st.session_state:
             st.session_state["point_index"] = 0
         st.session_state["point_index"] = min(st.session_state["point_index"], len(all_points) - 1)
-
         sel_cols = st.columns([5, 2], gap="small")
         selected_point = sel_cols[0].selectbox(
             "Poco",
             all_points,
             index=st.session_state["point_index"],
-        )
+        ) 
         st.session_state["point_index"] = all_points.index(selected_point)
 
         if "show_params_single" not in st.session_state:
@@ -959,7 +956,6 @@ elif subpage == "Visualizacao aprofundada":
         st.session_state["multi_points"] = [
             p for p in st.session_state["multi_points"] if p in all_points
         ]
-
         available_points = [p for p in all_points if p not in st.session_state["multi_points"]]
         if available_points:
             add_cols = st.columns([5, 2], gap="small")
@@ -987,9 +983,20 @@ elif subpage == "Visualizacao aprofundada":
             default=["NA"],
             key="multi_params",
         )
-
         selected_points = list(st.session_state["multi_points"])
 
+        if "multi_dark_mode" not in st.session_state:
+           st.session_state["multi_dark_mode"] = False
+
+        col_theme = st.columns([0.1, 0.9])
+        with col_theme[0]:
+           
+            if st.button("🌗", key="multi_theme_toggle"):
+                st.session_state["multi_dark_mode"] = not st.session_state["multi_dark_mode"]
+                st.rerun()
+
+            chart_theme = "plotly_dark" if st.session_state["multi_dark_mode"] else "plotly"
+                        
     insitu_param = None
     insitu_param_geral = None
     insitu_point_geral = None
