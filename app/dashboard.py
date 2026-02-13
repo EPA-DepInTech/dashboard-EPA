@@ -71,9 +71,6 @@ def _process_upload(uploaded_files):
     if not uploaded_files:
         return
 
-    # mantém referência aos uploads originais (para leitura dedicada em abas específicas)
-    st.session_state["uploaded_files"] = uploaded_files
-
     set_uploaded_file(uploaded_files)
     result = build_dataset_from_excels(uploaded_files)
 
