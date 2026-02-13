@@ -47,50 +47,37 @@ class SeriesSpec:
     # Conectar gaps de dados (plotly connectgaps)
     connect_gaps: Optional[bool] = None
 
-
 def build_time_chart_plotly(
     df: pd.DataFrame,
     x: str,
     series: Sequence[SeriesSpec],
     *,
     title: Optional[str] = None,
-
-    # --- Filtros ---
+    dark_mode: bool = False, # <-- Adicionado aqui
     date_range: Optional[tuple[Any, Any]] = None,
     query: Optional[str] = None,
     category_filters: Optional[dict[str, Sequence[Any]]] = None,
-
-    # --- Tratamento ---
     sort: bool = True,
     dropna_x: bool = True,
     limit_points: Optional[int] = None,
-
-    # --- Layout ---
     height: int = 420,
     show_range_slider: bool = False,
     legend: bool = True,
-
-    # --- Interpretação ---
     return_insights: bool = True,
 ) -> tuple[Any, dict[str, Any]]:
-    """
-    Retorna (fig, insights). Em Streamlit:
-      st.plotly_chart(fig, use_container_width=True)
-    """
+    
     data = df.copy()
 
-    # 1) Filtros (query e filtros categóricos)
+    # 1) Filtros
     if query:
         data = data.query(query)
-
     if category_filters:
         for col, allowed in category_filters.items():
             data = data[data[col].isin(list(allowed))]
 
-    # 2) Eixo temporal robusto
+    # 2) Eixo temporal
     if dropna_x:
         data = data.dropna(subset=[x])
-
     data[x] = pd.to_datetime(data[x], errors="coerce")
     data = data.dropna(subset=[x])
 
@@ -109,71 +96,64 @@ def build_time_chart_plotly(
     if limit_points is not None and len(data) > limit_points:
         data = data.tail(limit_points)
 
-    # 3) Prepara cada série (transformações por série)
+    # 3) Prepara cada série
     prepped: list[dict[str, Any]] = []
     any_y2 = any(s.axis == "y2" for s in series)
 
     for spec in series:
         if spec.y not in data.columns:
             continue
-
         x_col = spec.x or x
         if x_col not in data.columns:
             continue
-
         cols = [x_col, spec.y] + (spec.hover_cols or [])
         sdata = data[cols].copy()
         sdata[x_col] = pd.to_datetime(sdata[x_col], errors="coerce")
         sdata = sdata.dropna(subset=[x_col])
 
-        # 3.1) clip de outliers por quantis (só se for numérico)
         if spec.clip_quantiles and pd.api.types.is_numeric_dtype(sdata[spec.y]):
             qlo, qhi = spec.clip_quantiles
             lo = sdata[spec.y].quantile(qlo)
             hi = sdata[spec.y].quantile(qhi)
             sdata[spec.y] = sdata[spec.y].clip(lo, hi)
 
-        # 3.2) resample + agregação (se solicitado)
         if spec.resample_rule:
             sdata = sdata.set_index(x_col)
-
             agg = "mean" if spec.agg == "none" else spec.agg
-
             if agg == "count":
                 sres = sdata[spec.y].resample(spec.resample_rule).count()
             else:
                 if pd.api.types.is_numeric_dtype(sdata[spec.y]):
                     sres = getattr(sdata[spec.y].resample(spec.resample_rule), agg)()
                 else:
-                    # qualitativo -> último valor do período
                     sres = sdata[spec.y].resample(spec.resample_rule).last()
-
             sdata = sres.reset_index().rename(columns={0: spec.y})
 
-            # hover_cols após resample: normalmente não faz sentido manter (perde granularidade)
-            # se você quiser, dá pra agregar hover_cols também (mas aí precisa definir regras).
-            if spec.hover_cols:
-                for c in spec.hover_cols:
-                    if c in sdata.columns:
-                        continue
-
-        # 3.3) rolling (média móvel) após agregação (só numérico)
         if spec.rolling_window and pd.api.types.is_numeric_dtype(sdata[spec.y]):
             sdata[spec.y] = sdata[spec.y].rolling(spec.rolling_window, min_periods=1).mean()
 
         prepped.append({"spec": spec, "data": sdata, "x": x_col})
 
-    # 4) Renderização Plotly
-    fig = _render_plotly(prepped, x=x, title=title, height=height,
-                         any_y2=any_y2, show_range_slider=show_range_slider,
-                         legend=legend)
+    # 4) Renderização Plotly (Definindo o template)
+    template = "plotly_dark" if dark_mode else "plotly_white"
+    
+    fig = _render_plotly(
+        prepped, 
+        x=x, 
+        title=title, 
+        height=height,
+        any_y2=any_y2, 
+        show_range_slider=show_range_slider,
+        legend=legend,
+        template=template # <-- Passando para a renderizadora
+    )
 
     # 5) Insights
     insights = interpret_time_series(data, x=x, series=series, date_range=date_range) if return_insights else {}
 
     return fig, insights
 
-
+    
 def _render_plotly(
     prepped: list[dict[str, Any]],
     *,
@@ -183,6 +163,7 @@ def _render_plotly(
     any_y2: bool,
     show_range_slider: bool,
     legend: bool,
+    template: str = "plotly_white", # <-- Adicionado aqui
 ):
     try:
         import plotly.graph_objects as go
@@ -192,10 +173,13 @@ def _render_plotly(
 
     fig = make_subplots(specs=[[{"secondary_y": any_y2}]])
     fig.update_layout(
+        template=template,           # <-- Aplica o tema (dark ou light)
         title=title,
         height=height,
         margin=dict(l=20, r=20, t=50, b=20),
         showlegend=legend,
+        paper_bgcolor='rgba(0,0,0,0)', # Fundo transparente para herdar do Streamlit
+        plot_bgcolor='rgba(0,0,0,0)',
     )
     fig.update_xaxes(rangeslider=dict(visible=show_range_slider))
 
@@ -210,8 +194,7 @@ def _render_plotly(
 
         if spec.hover_cols:
             customdata = df[spec.hover_cols].to_numpy()
-            # CORRIGIR ESSA LEGENDA QUE NÃO SEI DAONDE VIRIA ESSE 'Y' <AQUI>
-            parts = [f"<b>{label}</b><br>", "%{x}<br>", f"{spec.y}: %{spec.y}<br>"]
+            parts = [f"<b>{label}</b><br>", "%{x}<br>", f"{spec.y}: %{{y}}<br>"] # Corrigido para %{y}
             for i, c in enumerate(spec.hover_cols):
                 parts.append(f"{c}: %{{customdata[{i}]}}<br>")
             parts.append("<extra></extra>")
@@ -220,7 +203,6 @@ def _render_plotly(
         # --- Qualitativo como degraus (status_step)
         if spec.kind == "status_step" and not pd.api.types.is_numeric_dtype(df[spec.y]):
             cat = df[spec.y].astype(str)
-
             order = spec.category_order or list(pd.unique(cat.dropna()))
             mapping = {k: i for i, k in enumerate(order)}
             y_num = cat.map(mapping)
@@ -310,7 +292,6 @@ def _render_plotly(
         fig.add_trace(trace, secondary_y=(spec.axis == "y2"))
 
     return fig
-
 
 def interpret_time_series(
     df: pd.DataFrame,
