@@ -1,4 +1,6 @@
-﻿from pathlib import Path
+import base64
+import time
+from pathlib import Path
 
 import streamlit as st
 
@@ -19,6 +21,25 @@ if LOGO_PATH.exists():
     logo_bytes = LOGO_PATH.read_bytes()
     st.logo(logo_bytes, icon_image=logo_bytes)
     st.session_state["_global_logo_loaded"] = True
+
+if "splash_shown" not in st.session_state:
+    st.session_state["splash_shown"] = False
+
+if not st.session_state["splash_shown"]:
+    if LOGO_PATH.exists():
+        logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+        splash_html = f"""
+        <div class="splash-container">
+            <img src="data:image/png;base64,{logo_b64}" class="splash-logo" />
+        </div>
+        """
+        splash_placeholder = st.empty()
+        splash_placeholder.markdown(splash_html, unsafe_allow_html=True)
+        time.sleep(2)
+        splash_placeholder.empty()
+
+    st.session_state["splash_shown"] = True
+    st.rerun()
 
 if not hasattr(st, "Page") or not hasattr(st, "navigation"):
     st.error(
