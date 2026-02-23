@@ -745,7 +745,7 @@ def read_laboratorio_excel(file_obj) -> pd.DataFrame:
     return out
 
 
-st.title("NA e Volume - Visualizacoes")
+# st.title("NA e Volume - Visualizacoes")
 
 df_dict = st.session_state.get("df_dict")
 df_by_file = st.session_state.get("df_dict_by_file")
@@ -810,8 +810,8 @@ for key in ("In Situ (Pontos)", "In Situ"):
             if not prepared.empty:
                 in_situ_pontos = prepared
                 break
-        except Exception as e:
-            st.warning(f"Falha ao preparar dados de In Situ (Pontos): {e}")
+        except Exception:
+            continue
 
 if "In Situ (Geral)" in df_dict:
     try:
@@ -1948,7 +1948,7 @@ elif subpage == "In situ aprofundado":
         start_default = max(date_min, date_max - pd.Timedelta(days=365))
         default_range = (start_default.date(), date_max.date())
 
-    ctrl_cols = st.columns([2, 2, 2, 1], gap="small")
+    ctrl_cols = st.columns([2, 2, 2, 1.4], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
     param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
     param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
@@ -1967,7 +1967,7 @@ elif subpage == "In situ aprofundado":
     if not default_pontos and pontos:
         default_pontos = [pontos[0]]
     pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
-    periodo = ctrl_cols[3].date_input("Período", value=default_range)
+    periodo = ctrl_cols[3].date_input("Período", value=default_range, format="DD/MM/YYYY")
 
     data_filt = df_long.copy()
     if pontos_sel:
@@ -2072,9 +2072,21 @@ elif subpage == "Laboratorial":
         st.stop()
 
     file_names = [getattr(f, "name", f"arquivo_{i+1}") for i, f in enumerate(uploaded_files)]
-    default_idx = 0
-    if selected_insitu_file and selected_insitu_file in file_names:
-        default_idx = file_names.index(selected_insitu_file)
+    saved_lab_file = st.session_state.get("lab_file_select")
+    if saved_lab_file in file_names:
+        default_lab_file = saved_lab_file
+    else:
+        excluded_files = {selected_na_file, selected_insitu_file}
+        preferred_files = [name for name in file_names if name not in excluded_files]
+        if preferred_files:
+            default_lab_file = preferred_files[0]
+        elif selected_insitu_file and selected_insitu_file in file_names:
+            default_lab_file = selected_insitu_file
+        elif selected_na_file and selected_na_file in file_names:
+            default_lab_file = selected_na_file
+        else:
+            default_lab_file = file_names[0]
+    default_idx = file_names.index(default_lab_file)
     selected_lab_file = st.selectbox(
         "Arquivo laboratorial",
         file_names,
@@ -2116,7 +2128,7 @@ elif subpage == "Laboratorial":
 
     sample_ids = sorted(df_lab["identificacao_amostra"].dropna().unique().tolist())
 
-    ctrl_cols = st.columns([4, 4, 2], gap="small")
+    ctrl_cols = st.columns([3.5, 3.5, 3], gap="small")
     default_params = params[: min(6, len(params))]
     if "lab_selected_params" not in st.session_state:
         st.session_state["lab_selected_params"] = default_params
@@ -2142,7 +2154,7 @@ elif subpage == "Laboratorial":
         sample_ids,
         default=sample_ids[:3] if sample_ids else [],
     )
-    periodo = ctrl_cols[2].date_input("Período", value=default_range)
+    periodo = ctrl_cols[2].date_input("Período", value=default_range, format="DD/MM/YYYY")
 
     data_filt = df_lab.copy()
     if selected_params:
@@ -2290,7 +2302,7 @@ elif subpage == "In situ":
             st.info("Nenhum ponto encontrado na aba In Situ.")
             st.stop()
 
-        ctrl_cols = st.columns([2, 2, 1], gap="small")
+        ctrl_cols = st.columns([2, 2, 1.4], gap="small")
         selected_param = ctrl_cols[0].selectbox("Parametro", params)
         default_points = points if len(points) <= 8 else points[:8]
         selected_points = ctrl_cols[1].multiselect(
@@ -2298,7 +2310,7 @@ elif subpage == "In situ":
             points,
             default=default_points,
         )
-        date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
+        date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
 
         if not selected_points:
             st.info("Selecione ao menos um ponto para exibir o grafico.")
@@ -2313,7 +2325,7 @@ elif subpage == "In situ":
             points = sorted(data_source["Ponto"].dropna().unique().tolist())
 
         if points:
-            ctrl_cols = st.columns([2, 2, 1], gap="small")
+            ctrl_cols = st.columns([2, 2, 1.4], gap="small")
             selected_param = ctrl_cols[0].selectbox("Parametro", params)
             default_points = points if len(points) <= 3 else points[:3]
             selected_points = ctrl_cols[1].multiselect(
@@ -2321,15 +2333,15 @@ elif subpage == "In situ":
                 points,
                 default=default_points,
             )
-            date_input = ctrl_cols[2].date_input("Periodo", value=default_range)
+            date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
             if not selected_points:
                 st.info("Selecione ao menos um ponto para exibir o grafico.")
                 st.stop()
             data = data_source[data_source["Ponto"].isin(selected_points)].copy()
         else:
-            ctrl_cols = st.columns([2, 1], gap="small")
+            ctrl_cols = st.columns([2, 1.4], gap="small")
             selected_param = ctrl_cols[0].selectbox("Parametro", params)
-            date_input = ctrl_cols[1].date_input("Periodo", value=default_range)
+            date_input = ctrl_cols[1].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
             data = data_source.copy()
 
         data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
