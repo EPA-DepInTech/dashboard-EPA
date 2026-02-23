@@ -1852,7 +1852,8 @@ elif subpage == "In situ aprofundado":
 
     ctrl_cols = st.columns([2, 2, 2, 1], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
-    param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", ["(nenhum)"] + parametros, index=0)
+    param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
+    param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
     pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
     default_pontos: list[str] = []
     if default_range:
@@ -1886,7 +1887,7 @@ elif subpage == "In situ aprofundado":
         st.stop()
 
     series: list[SeriesSpec] = []
-    palette = [
+    palette_main = [
         "#1f77b4",
         "#ff7f0e",
         "#2ca02c",
@@ -1896,29 +1897,46 @@ elif subpage == "In situ aprofundado":
         "#e377c2",
         "#17becf",
     ]
-    for idx, col in enumerate([c for c in df_plot1.columns if c != "DataHora"]):
+    plot1_cols = [c for c in df_plot1.columns if c != "DataHora"]
+    df_plot = df_plot1.rename(columns={col: f"{col}__p1" for col in plot1_cols})
+    for idx, col in enumerate(plot1_cols):
         series.append(
             SeriesSpec(
-                y=col,
+                y=f"{col}__p1",
                 label=f"{col} - {param1}",
                 kind="bar",
-                color=palette[idx % len(palette)],
+                color=palette_main[idx % len(palette_main)],
                 axis="y",
             )
         )
 
-    df_plot = df_plot1
     if param2 != "(nenhum)":
         df_plot2 = pivot_in_situ_for_plot(data_filt, param2)
         if not df_plot2.empty:
-            df_plot = df_plot1.merge(df_plot2, on="DataHora", how="outer")
-            for idx, col in enumerate([c for c in df_plot2.columns if c != "DataHora"]):
+            palette_second = [
+                "#d94801",
+                "#e6550d",
+                "#f16913",
+                "#fd8d3c",
+                "#9e9ac8",
+                "#756bb1",
+                "#dd3497",
+                "#c51b8a",
+            ]
+            plot2_cols = [c for c in df_plot2.columns if c != "DataHora"]
+            df_plot2 = df_plot2.rename(columns={col: f"{col}__p2" for col in plot2_cols})
+            df_plot = df_plot.merge(df_plot2, on="DataHora", how="outer")
+            for idx, col in enumerate(plot2_cols):
                 series.append(
                     SeriesSpec(
-                        y=col,
+                        y=f"{col}__p2",
                         label=f"{col} - {param2}",
-                        kind="bar",
-                        color=palette[(idx + 3) % len(palette)],
+                        kind="line",
+                        marker="square",
+                        line_dash="dash",
+                        marker_line_color="#111111",
+                        marker_line_width=1.0,
+                        color=palette_second[idx % len(palette_second)],
                         axis="y2",
                     )
                 )
