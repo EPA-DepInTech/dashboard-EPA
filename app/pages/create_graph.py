@@ -1,6 +1,7 @@
 ﻿
 import re
 import unicodedata
+import io
 
 import pandas as pd
 import streamlit as st
@@ -622,6 +623,128 @@ def build_point_series(
     return wide, na_flat
 
 
+def _flatten_excel_columns(columns) -> list[str]:
+    flat: list[str] = []
+    seen: dict[str, int] = {}
+    for col in columns:
+        if isinstance(col, tuple):
+            parts = [str(p).strip() for p in col if p is not None and str(p).strip() and "unnamed" not in str(p).lower()]
+            name = parts[-1] if parts else "col"
+        else:
+            name = str(col).strip()
+        name = re.sub(r"\s+", " ", name).strip()
+        if not name:
+            name = "col"
+        idx = seen.get(name, 0)
+        seen[name] = idx + 1
+        flat.append(f"{name}_{idx}" if idx else name)
+    return flat
+
+
+def _parse_laboratorio_result(value: object):
+    if value is None or pd.isna(value):
+        return pd.NA
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if s == "":
+        return pd.NA
+    m = re.search(r"[-+]?\d{1,3}(?:\.\d{3})*(?:,\d+)?|[-+]?\d+(?:[.,]\d+)?", s)
+    if not m:
+        return pd.NA
+    num = m.group(0).replace(".", "").replace(",", ".")
+    try:
+        return float(num)
+    except Exception:
+        return pd.NA
+
+
+def read_laboratorio_excel(file_obj) -> pd.DataFrame:
+    if hasattr(file_obj, "getvalue"):
+        xls = pd.ExcelFile(io.BytesIO(file_obj.getvalue()))
+    else:
+        xls = pd.ExcelFile(file_obj)
+
+    target_sheet = None
+    for sheet in xls.sheet_names:
+        ns = _norm_text(sheet)
+        if "resultado" in ns and "ensaio" in ns:
+            target_sheet = sheet
+            break
+    if target_sheet is None:
+        for sheet in xls.sheet_names:
+            if "sumario" not in _norm_text(sheet):
+                target_sheet = sheet
+                break
+    if target_sheet is None:
+        return pd.DataFrame()
+
+    df = xls.parse(target_sheet, header=[0, 1])
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = _flatten_excel_columns(df.columns)
+    else:
+        df.columns = _flatten_excel_columns([(c,) for c in df.columns])
+
+    ignore_tokens = {
+        "processocomercial",
+        "situacao",
+        "parecerdaamostra",
+        "parecerdeamostra",
+        "datadapublicacao",
+        "datadepublicacao",
+    }
+    keep_cols = [
+        c for c in df.columns
+        if not any(tok in _norm_key(c) for tok in ignore_tokens)
+    ]
+    df = df[keep_cols].copy()
+
+    date_col = _find_col(df, ["data", "coleta"])
+    param_col = _find_col(df, ["param"])
+    result_col = _find_col(df, ["result"])
+    sample_col = _find_col(df, ["n", "amostra"])
+    sample_id_col = _find_col(df, ["identificacao", "amostra"]) or _find_col(df, ["amostra"])
+    method_col = _find_col(df, ["metodo"])
+    unit_col = _find_col(df, ["unidad"])
+    cas_col = _find_col(df, ["cas"])
+
+    if not date_col or not param_col or not result_col:
+        return pd.DataFrame()
+
+    out = pd.DataFrame(
+        {
+            "data_coleta": pd.to_datetime(df[date_col], errors="coerce", dayfirst=True),
+            "parametro": df[param_col].astype(str).str.strip(),
+            "resultado": df[result_col],
+            "resultado_num": df[result_col].map(_parse_laboratorio_result),
+        }
+    )
+    if sample_col and sample_col in df.columns:
+        out["amostra"] = df[sample_col].astype(str).str.strip()
+    else:
+        out["amostra"] = pd.NA
+    if sample_id_col and sample_id_col in df.columns:
+        out["identificacao_amostra"] = df[sample_id_col].astype(str).str.strip()
+    else:
+        out["identificacao_amostra"] = pd.NA
+    if method_col and method_col in df.columns:
+        out["metodo"] = df[method_col].astype(str).str.strip()
+    else:
+        out["metodo"] = pd.NA
+    if unit_col and unit_col in df.columns:
+        out["unidade"] = df[unit_col].astype(str).str.strip()
+    else:
+        out["unidade"] = pd.NA
+    if cas_col and cas_col in df.columns:
+        out["cas"] = df[cas_col].astype(str).str.strip()
+    else:
+        out["cas"] = pd.NA
+
+    out = out.dropna(subset=["data_coleta"])
+    out = out[out["parametro"] != ""]
+    return out
+
+
 st.title("NA e Volume - Visualizacoes")
 
 df_dict = st.session_state.get("df_dict")
@@ -703,6 +826,7 @@ if in_situ_pontos is not None or in_situ_geral is not None:
     subpage_options.append("In situ")
 # deixa sempre visível; se faltar dado, mostra orientação dentro da aba
 subpage_options.append("In situ aprofundado")
+subpage_options.append("Laboratorial")
 
 with st.sidebar:
     st.subheader("Abas")
@@ -1826,7 +1950,8 @@ elif subpage == "In situ aprofundado":
 
     ctrl_cols = st.columns([2, 2, 2, 1], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
-    param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", ["(nenhum)"] + parametros, index=0)
+    param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
+    param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
     pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
     default_pontos: list[str] = []
     if default_range:
@@ -1860,7 +1985,7 @@ elif subpage == "In situ aprofundado":
         st.stop()
 
     series: list[SeriesSpec] = []
-    palette = [
+    palette_main = [
         "#1f77b4",
         "#ff7f0e",
         "#2ca02c",
@@ -1870,29 +1995,46 @@ elif subpage == "In situ aprofundado":
         "#e377c2",
         "#17becf",
     ]
-    for idx, col in enumerate([c for c in df_plot1.columns if c != "DataHora"]):
+    plot1_cols = [c for c in df_plot1.columns if c != "DataHora"]
+    df_plot = df_plot1.rename(columns={col: f"{col}__p1" for col in plot1_cols})
+    for idx, col in enumerate(plot1_cols):
         series.append(
             SeriesSpec(
-                y=col,
+                y=f"{col}__p1",
                 label=f"{col} - {param1}",
                 kind="bar",
-                color=palette[idx % len(palette)],
+                color=palette_main[idx % len(palette_main)],
                 axis="y",
             )
         )
 
-    df_plot = df_plot1
     if param2 != "(nenhum)":
         df_plot2 = pivot_in_situ_for_plot(data_filt, param2)
         if not df_plot2.empty:
-            df_plot = df_plot1.merge(df_plot2, on="DataHora", how="outer")
-            for idx, col in enumerate([c for c in df_plot2.columns if c != "DataHora"]):
+            palette_second = [
+                "#d94801",
+                "#e6550d",
+                "#f16913",
+                "#fd8d3c",
+                "#9e9ac8",
+                "#756bb1",
+                "#dd3497",
+                "#c51b8a",
+            ]
+            plot2_cols = [c for c in df_plot2.columns if c != "DataHora"]
+            df_plot2 = df_plot2.rename(columns={col: f"{col}__p2" for col in plot2_cols})
+            df_plot = df_plot.merge(df_plot2, on="DataHora", how="outer")
+            for idx, col in enumerate(plot2_cols):
                 series.append(
                     SeriesSpec(
-                        y=col,
+                        y=f"{col}__p2",
                         label=f"{col} - {param2}",
-                        kind="bar",
-                        color=palette[(idx + 3) % len(palette)],
+                        kind="line",
+                        marker="square",
+                        line_dash="dash",
+                        marker_line_color="#111111",
+                        marker_line_width=1.0,
+                        color=palette_second[idx % len(palette_second)],
                         axis="y2",
                     )
                 )
@@ -1917,6 +2059,171 @@ elif subpage == "In situ aprofundado":
         st.dataframe(
             data_filt[["DataHora", "poco_id", "parametro", "valor", "status", "sheet"]]
             .sort_values("DataHora"),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+elif subpage == "Laboratorial":
+    st.subheader("Laboratorial")
+
+    uploaded_files = st.session_state.get("uploaded_files", [])
+    if not uploaded_files:
+        st.info("Carregue ao menos um Excel na página inicial para usar a aba laboratorial.")
+        st.stop()
+
+    file_names = [getattr(f, "name", f"arquivo_{i+1}") for i, f in enumerate(uploaded_files)]
+    default_idx = 0
+    if selected_insitu_file and selected_insitu_file in file_names:
+        default_idx = file_names.index(selected_insitu_file)
+    selected_lab_file = st.selectbox(
+        "Arquivo laboratorial",
+        file_names,
+        index=default_idx,
+        key="lab_file_select",
+    )
+    file_obj = next((f for f in uploaded_files if getattr(f, "name", "") == selected_lab_file), None)
+    if file_obj is None:
+        st.info("Arquivo laboratorial não encontrado na sessão.")
+        st.stop()
+
+    try:
+        df_lab = read_laboratorio_excel(file_obj)
+    except Exception as e:
+        st.error(f"Falha ao ler a planilha laboratorial: {e}")
+        st.stop()
+
+    if df_lab.empty:
+        st.info("Não foi possível identificar dados laboratoriais no arquivo selecionado.")
+        st.stop()
+
+    # ignora registros sem unidade útil
+    if "unidade" in df_lab.columns:
+        df_lab = df_lab[df_lab["unidade"].fillna("").astype(str).str.strip().str.lower() != "no unit"]
+        if df_lab.empty:
+            st.info("Sem dados laboratoriais após remover registros com unidade 'No Unit'.")
+            st.stop()
+
+    params = sorted(df_lab["parametro"].dropna().unique().tolist())
+    if not params:
+        st.info("Nenhum parâmetro laboratorial encontrado.")
+        st.stop()
+
+    date_min = df_lab["data_coleta"].min()
+    date_max = df_lab["data_coleta"].max()
+    default_range = None
+    if pd.notna(date_min) and pd.notna(date_max):
+        default_range = (date_min.date(), date_max.date())
+
+    sample_ids = sorted(df_lab["identificacao_amostra"].dropna().unique().tolist())
+
+    ctrl_cols = st.columns([4, 4, 2], gap="small")
+    default_params = params[: min(6, len(params))]
+    if "lab_selected_params" not in st.session_state:
+        st.session_state["lab_selected_params"] = default_params
+    else:
+        st.session_state["lab_selected_params"] = [
+            p for p in st.session_state["lab_selected_params"] if p in params
+        ]
+        if not st.session_state["lab_selected_params"]:
+            st.session_state["lab_selected_params"] = default_params
+    if st.session_state.get("lab_select_all_trigger", False):
+        st.session_state["lab_selected_params"] = params.copy()
+        st.session_state["lab_select_all_trigger"] = False
+    selected_params = ctrl_cols[0].multiselect(
+        "Parâmetros",
+        params,
+        key="lab_selected_params",
+    )
+    if ctrl_cols[0].button("Selecionar todos parâmetros"):
+        st.session_state["lab_select_all_trigger"] = True
+        st.rerun()
+    selected_samples = ctrl_cols[1].multiselect(
+        "Identificação da amostra",
+        sample_ids,
+        default=sample_ids[:3] if sample_ids else [],
+    )
+    periodo = ctrl_cols[2].date_input("Período", value=default_range)
+
+    data_filt = df_lab.copy()
+    if selected_params:
+        data_filt = data_filt[data_filt["parametro"].isin(selected_params)]
+    if selected_samples:
+        data_filt = data_filt[data_filt["identificacao_amostra"].isin(selected_samples)]
+    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
+        start, end = periodo
+        if start:
+            data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(start)]
+        if end:
+            data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(end)]
+
+    if data_filt.empty:
+        st.info("Sem dados após os filtros selecionados.")
+        st.stop()
+
+    chart_df = (
+        data_filt.pivot_table(
+            index="data_coleta",
+            columns="parametro",
+            values="resultado_num",
+            aggfunc="mean",
+        )
+        .reset_index()
+        .sort_values("data_coleta")
+    )
+    value_cols = [c for c in chart_df.columns if c != "data_coleta"]
+    if not value_cols:
+        st.info("Nenhum resultado numérico disponível para os parâmetros selecionados.")
+        st.stop()
+
+    palette = [
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#17becf",
+    ]
+    series = [
+        SeriesSpec(
+            y=col,
+            label=col,
+            kind="line",
+            marker="circle",
+            color=palette[i % len(palette)],
+            connect_gaps=True,
+        )
+        for i, col in enumerate(value_cols)
+    ]
+
+    fig_lab, _ = build_time_chart_plotly(
+        chart_df,
+        x="data_coleta",
+        series=series,
+        title="Resultados laboratoriais",
+        show_range_slider=False,
+        limit_points=200000,
+    )
+    fig_lab.update_xaxes(title_text="Data de Coleta")
+    fig_lab.update_yaxes(title_text="Resultado")
+    st.plotly_chart(fig_lab, use_container_width=True)
+
+    with st.expander("Tabela laboratorial", expanded=False):
+        cols_view = [
+            "data_coleta",
+            "amostra",
+            "identificacao_amostra",
+            "metodo",
+            "parametro",
+            "resultado",
+            "resultado_num",
+            "unidade",
+            "cas",
+        ]
+        cols_view = [c for c in cols_view if c in data_filt.columns]
+        st.dataframe(
+            data_filt[cols_view].sort_values("data_coleta"),
             use_container_width=True,
             hide_index=True,
         )
