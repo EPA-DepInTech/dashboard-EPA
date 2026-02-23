@@ -103,6 +103,101 @@ def apply_graph_theme(fig):
         fig.update_layout(**light_layout)
     return fig
 
+    
+def apply_graph_theme(fig):
+    theme = st.session_state.get('graph_theme', 'light')
+    if 'graph_theme' not in st.session_state:
+        st.session_state['graph_theme'] = 'light'
+    col_theme, _ = st.columns([0.1, 0.9])
+    with col_theme:
+        if st.button('🌗', help='Alternar Tema do Gráfico', use_container_width=True):
+            st.session_state['graph_theme'] = 'dark' if st.session_state['graph_theme'] == 'light' else 'light'
+            theme = st.session_state['graph_theme']
+    if theme == 'dark':
+        dark_layout = dict(
+            template='plotly_dark',
+            paper_bgcolor="#000000",
+            plot_bgcolor="#000000",
+            font_color="#aaaaaa",
+            title_font=dict(color='#f8fafc', size=20, family='Segoe UI, Arial'),
+            xaxis=dict(
+                gridcolor="#000000",
+                zerolinecolor="#D1CECE",
+                linecolor="#919191",
+                tickfont=dict(color="#afafaf", size=13),
+                title_font=dict(color="#acacac", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            yaxis=dict(
+                gridcolor="#BBBBBB",
+                zerolinecolor="#B9B9B9",
+                linecolor='#f8fafc',
+                tickfont=dict(color="#adadad", size=13),
+                title_font=dict(color="#BEBEBE", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            legend=dict(
+                bgcolor="#000000",
+                bordercolor='#23272e',
+                font=dict(color='#f8fafc', size=13),
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            ),
+            colorway=[
+                '#2563eb', '#16a34a', '#f59e42', '#e11d48', '#7c3aed',
+                '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
+            ],
+        )
+        fig.update_layout(**dark_layout)
+    else:
+        light_layout = dict(
+            template='plotly_white',
+            paper_bgcolor='#f8fafc',
+            plot_bgcolor='#f8fafc',
+            font_color="#000000",
+            title_font=dict(color="#181a1b", size=20, family='Segoe UI, Arial'),
+            
+            xaxis=dict(
+                gridcolor='#e5e7eb',
+                zerolinecolor='#e5e7eb',
+                linecolor="#000000",
+                tickfont=dict(color='#181c1f', size=13),
+                title_font=dict(color="#0b0c0c", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            yaxis=dict(
+                gridcolor='#e5e7eb',
+                zerolinecolor='#e5e7eb',
+                linecolor="#4B4B4B",
+                tickfont=dict(color="#334155", size=12),
+                title_font=dict(color="#334155", size=13),
+                showline=True,
+                showgrid=True,
+            ),
+            legend=dict(
+                bgcolor='#f8fafc',
+                bordercolor='#e5e7eb',
+                font=dict(color="#1a1b1b", size=13),
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            ),
+            colorway=[
+                '#2563eb', "#003b16", '#f59e42', '#e11d48', "#2f0675",
+                "#4597bd", '#facc15', '#f472b6', '#a3e635', '#f87171',
+            ],
+        )
+        fig.update_layout(**light_layout)
+    return fig
+
 def _norm_key(value: object) -> str:
     s = str(value).strip().lower()
     s = unicodedata.normalize("NFKD", s)
