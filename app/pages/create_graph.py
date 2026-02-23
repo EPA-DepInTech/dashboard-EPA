@@ -2134,7 +2134,7 @@ elif subpage == "Laboratorial":
         params,
         key="lab_selected_params",
     )
-    if ctrl_cols[0].button("Selecionar todos parâmetros"):
+    if ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
         st.session_state["lab_select_all_trigger"] = True
         st.rerun()
     selected_samples = ctrl_cols[1].multiselect(
@@ -2175,16 +2175,31 @@ elif subpage == "Laboratorial":
         st.info("Nenhum resultado numérico disponível para os parâmetros selecionados.")
         st.stop()
 
-    palette = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#17becf",
-    ]
+    current_theme = st.session_state.get("graph_theme", "light")
+    if current_theme == "dark":
+        palette = [
+            "#60a5fa",
+            "#34d399",
+            "#f59e0b",
+            "#f87171",
+            "#a78bfa",
+            "#22d3ee",
+            "#f472b6",
+            "#bef264",
+        ]
+        marker_border = "#0f172a"
+    else:
+        palette = [
+            "#1d4ed8",
+            "#047857",
+            "#d97706",
+            "#dc2626",
+            "#7c3aed",
+            "#0e7490",
+            "#be185d",
+            "#65a30d",
+        ]
+        marker_border = "#ffffff"
     series = [
         SeriesSpec(
             y=col,
@@ -2192,6 +2207,8 @@ elif subpage == "Laboratorial":
             kind="line",
             marker="circle",
             color=palette[i % len(palette)],
+            marker_line_color=marker_border,
+            marker_line_width=1.2,
             connect_gaps=True,
         )
         for i, col in enumerate(value_cols)
@@ -2207,6 +2224,17 @@ elif subpage == "Laboratorial":
     )
     fig_lab.update_xaxes(title_text="Data de Coleta")
     fig_lab.update_yaxes(title_text="Resultado")
+    apply_graph_theme(fig_lab)
+    fig_lab.update_layout(
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            font=dict(size=11),
+        ),
+    )
     st.plotly_chart(fig_lab, use_container_width=True)
 
     with st.expander("Tabela laboratorial", expanded=False):
