@@ -1,8 +1,8 @@
 ﻿import pandas as pd
+from pathlib import Path
 import plotly.express as px
 import re
 import streamlit as st
-import os
 import base64
 import time
 
@@ -10,7 +10,22 @@ from core.state import get_uploaded_file, init_session_state, set_uploaded_file
 from services.dataset_service import build_dataset_from_excels
 
 # ================== CONFIG ==================
-logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "style", "epa_logo.png"))
+BASE_DIR = Path(__file__).resolve().parent
+css_candidates = [
+    BASE_DIR / ".." / "style" / "style.css",
+    BASE_DIR / "style" / "style.css",
+]
+logo_candidates = [
+    BASE_DIR / ".." / "style" / "epa_logo.png",
+    BASE_DIR / "style" / "epa_logo.png",
+]
+
+css_path = next((p for p in css_candidates if p.exists()), None)
+logo_path = next((p for p in logo_candidates if p.exists()), None)
+
+if css_path and not st.session_state.get("_global_css_loaded", False):
+    st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+    st.session_state["_global_css_loaded"] = True
 
 # ================== FUNÇÕES ==================
 def load_image_base64(path):
@@ -18,7 +33,7 @@ def load_image_base64(path):
         return base64.b64encode(f.read()).decode()
 
 # ================== LOGO ==================
-if os.path.exists(logo_path):
+if logo_path and not st.session_state.get("_global_logo_loaded", False):
     with open(logo_path, "rb") as f:
         logo_bytes = f.read()
 
@@ -26,6 +41,7 @@ if os.path.exists(logo_path):
         logo_bytes,
         icon_image=logo_bytes,
     )
+    st.session_state["_global_logo_loaded"] = True
 
 init_session_state()
 
@@ -34,7 +50,7 @@ if "splash_shown" not in st.session_state:
     st.session_state["splash_shown"] = False
 
 if not st.session_state["splash_shown"]:
-    if os.path.exists(logo_path):
+    if logo_path:
         logo_b64 = load_image_base64(logo_path)
 
         splash_html = f"""
