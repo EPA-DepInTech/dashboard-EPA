@@ -1,72 +1,11 @@
 ﻿import pandas as pd
-from pathlib import Path
 import plotly.express as px
 import re
 import streamlit as st
-import base64
-import time
 
 from core.state import get_uploaded_file, init_session_state, set_uploaded_file
 from services.dataset_service import build_dataset_from_excels
 
-# ================== CONFIG ==================
-BASE_DIR = Path(__file__).resolve().parent
-css_candidates = [
-    BASE_DIR / ".." / "style" / "style.css",
-    BASE_DIR / "style" / "style.css",
-]
-logo_candidates = [
-    BASE_DIR / ".." / "style" / "epa_logo.png",
-    BASE_DIR / "style" / "epa_logo.png",
-]
-
-css_path = next((p for p in css_candidates if p.exists()), None)
-logo_path = next((p for p in logo_candidates if p.exists()), None)
-
-if css_path and not st.session_state.get("_global_css_loaded", False):
-    st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
-    st.session_state["_global_css_loaded"] = True
-
-# ================== FUNÇÕES ==================
-def load_image_base64(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-# ================== LOGO ==================
-if logo_path and not st.session_state.get("_global_logo_loaded", False):
-    with open(logo_path, "rb") as f:
-        logo_bytes = f.read()
-
-    st.logo(
-        logo_bytes,
-        icon_image=logo_bytes,
-    )
-    st.session_state["_global_logo_loaded"] = True
-
-init_session_state()
-
-# ================== SPLASH SCREEN (2s) ==================
-if "splash_shown" not in st.session_state:
-    st.session_state["splash_shown"] = False
-
-if not st.session_state["splash_shown"]:
-    if logo_path:
-        logo_b64 = load_image_base64(logo_path)
-
-        splash_html = f"""
-        <div class="splash-container">
-            <img src="data:image/png;base64,{logo_b64}" class="splash-logo" />
-        </div>
-        <div data-testid="stSidebarContent" 
-        class="st-emotion-cache-155jwzh"></div>
-        """
-        placeholder = st.empty()
-        placeholder.markdown(splash_html, unsafe_allow_html=True)
-        time.sleep(2)
-        placeholder.empty()
-
-    st.session_state["splash_shown"] = True
-    st.rerun()
 
 # ================== TÍTULO ==================
 st.title("📊 Dashboard de Amostras")
