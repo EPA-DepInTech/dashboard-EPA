@@ -1,5 +1,4 @@
-﻿
-import re
+﻿import re
 import unicodedata
 import io
 
@@ -11,16 +10,10 @@ from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
 
-    
-def apply_graph_theme(fig, toggle_key: str = "graph_theme_toggle"):
+def apply_graph_theme(fig):
     theme = st.session_state.get('graph_theme', 'light')
     if 'graph_theme' not in st.session_state:
         st.session_state['graph_theme'] = 'light'
-    col_theme, _ = st.columns([0.1, 0.9])
-    with col_theme:
-        if st.button('🌗', help='Alternar Tema do Gráfico', use_container_width=True, key=toggle_key):
-            st.session_state['graph_theme'] = 'dark' if st.session_state['graph_theme'] == 'light' else 'light'
-            theme = st.session_state['graph_theme']
     if theme == 'dark':
         dark_layout = dict(
             template='plotly_dark',
@@ -105,6 +98,22 @@ def apply_graph_theme(fig, toggle_key: str = "graph_theme_toggle"):
         )
         fig.update_layout(**light_layout)
     return fig
+
+
+def render_graph_theme_toggle() -> None:
+    if "graph_theme" not in st.session_state:
+        st.session_state["graph_theme"] = "light"
+    top_left, top_right = st.columns([0.9, 0.1])
+    with top_right:
+        if st.button(
+            "🌗",
+            help="Alternar Tema dos Gráficos",
+            use_container_width=True,
+            key="global_graph_theme_toggle",
+        ):
+            st.session_state["graph_theme"] = (
+                "dark" if st.session_state["graph_theme"] == "light" else "light"
+            )
 
 def _norm_key(value: object) -> str:
     s = str(value).strip().lower()
@@ -823,7 +832,7 @@ if "In Situ (Geral)" in df_dict:
     except Exception as e:
         st.warning(f"Falha ao preparar dados de In Situ (Geral): {e}")
 
-subpage_options = ["Media NA vs Volume Infiltrado", "Visualizacao aprofundada"]
+subpage_options = ["Operacional", "Visualizacao aprofundada"]
 if in_situ_pontos is not None or in_situ_geral is not None:
     subpage_options.append("In situ")
 # deixa sempre visível; se faltar dado, mostra orientação dentro da aba
@@ -839,7 +848,9 @@ with st.sidebar:
         horizontal=False,
     )
 
-if subpage == "Media NA vs Volume Infiltrado":
+render_graph_theme_toggle()
+
+if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
 
     vb_plot = vb[["Data", "poco_key", "bombeado_vol"]].copy()
@@ -987,7 +998,7 @@ if subpage == "Media NA vs Volume Infiltrado":
         else None
     )
 
-    apply_graph_theme(fig, toggle_key="graph_theme_toggle_vb")
+    apply_graph_theme(fig)
 
     # Garante boa legibilidade das legendas dos eixos Y nos dois temas.
     current_theme = st.session_state.get("graph_theme", "light")
@@ -1008,8 +1019,8 @@ if subpage == "Media NA vs Volume Infiltrado":
     # Posiciona a legenda abaixo do grafico sem sobrepor os rótulos do eixo X.
     num_legend_items = len(selected_points) + 1  # +1 para Volume Acumulado
     legend_rows = max(1, (num_legend_items + 7) // 8)  # ~8 itens por linha
-    bottom_margin = 96 + legend_rows * 22
-    legend_y = -0.20 - max(0, legend_rows - 1) * 0.09
+    bottom_margin = 142 + legend_rows * 24
+    legend_y = -0.32 - max(0, legend_rows - 1) * 0.10
     legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
     legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
     legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
@@ -1178,7 +1189,7 @@ if subpage == "Media NA vs Volume Infiltrado":
                         else None
                     )
 
-                    apply_graph_theme(fig_vi, toggle_key="graph_theme_toggle_vi")
+                    apply_graph_theme(fig_vi)
 
                     current_theme = st.session_state.get("graph_theme", "light")
                     y_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
@@ -1197,8 +1208,8 @@ if subpage == "Media NA vs Volume Infiltrado":
 
                     num_vi_legend_items = len(selected_outputs) + 1
                     vi_legend_rows = max(1, (num_vi_legend_items + 7) // 8)
-                    vi_bottom_margin = 96 + vi_legend_rows * 22
-                    vi_legend_y = -0.20 - max(0, vi_legend_rows - 1) * 0.09
+                    vi_bottom_margin = 142 + vi_legend_rows * 24
+                    vi_legend_y = -0.32 - max(0, vi_legend_rows - 1) * 0.10
                     legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
                     legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
                     legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
@@ -1220,6 +1231,164 @@ if subpage == "Media NA vs Volume Infiltrado":
                     fig_vi.update_xaxes(automargin=True)
 
                     st.plotly_chart(fig_vi, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("Volume acumulado: bombeado vs infiltrado")
+
+    vb_acc_src = vb[["Data", "poco_key", "bombeado_vol"]].copy()
+    vb_acc_src["Data"] = pd.to_datetime(vb_acc_src["Data"], errors="coerce")
+    vb_acc_src["poco_key"] = vb_acc_src["poco_key"].astype(str).str.strip().str.upper()
+    vb_acc_src = vb_acc_src.dropna(subset=["Data", "poco_key"])
+
+    vi_acc_src = vi[["Data", "saida_key", "infiltrado_vol"]].copy()
+    vi_acc_src["Data"] = pd.to_datetime(vi_acc_src["Data"], errors="coerce")
+    vi_acc_src["saida_key"] = vi_acc_src["saida_key"].astype(str).str.strip().str.upper()
+    vi_acc_src = vi_acc_src.dropna(subset=["Data", "saida_key"])
+
+    all_dates = pd.concat(
+        [vb_acc_src["Data"], vi_acc_src["Data"]],
+        ignore_index=True,
+    ).dropna()
+
+    if all_dates.empty:
+        st.info("Nao ha dados para o grafico acumulado comparativo.")
+    else:
+        max_acc_date = all_dates.max()
+        min_acc_date = all_dates.min()
+        start_acc_default = max(min_acc_date, max_acc_date - pd.DateOffset(months=1))
+        default_acc_range = (start_acc_default.date(), max_acc_date.date())
+
+        acc_cols = st.columns([2.4, 1.6], gap="small")
+        selected_acc_period = acc_cols[1].date_input(
+            "Periodo acumulado",
+            value=default_acc_range,
+            format="DD/MM/YYYY",
+            key="avg_acc_period",
+        )
+
+        if isinstance(selected_acc_period, (list, tuple)) and len(selected_acc_period) == 2:
+            acc_start, acc_end = selected_acc_period
+            if acc_start:
+                vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
+                vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
+            if acc_end:
+                vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
+                vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
+
+        vb_acc_line = (
+            vb_acc_src[vb_acc_src["poco_key"].map(_norm_text) == "acumulado"]
+            .groupby("Data", as_index=False)["bombeado_vol"]
+            .sum()
+            .sort_values("Data")
+        )
+        if vb_acc_line.empty:
+            vb_daily = (
+                vb_acc_src[vb_acc_src["poco_key"].map(_norm_text) != "acumulado"]
+                .groupby("Data", as_index=False)["bombeado_vol"]
+                .sum()
+                .sort_values("Data")
+            )
+            vb_acc_line = vb_daily.assign(bombeado_acumulado=vb_daily["bombeado_vol"].cumsum())[["Data", "bombeado_acumulado"]]
+        else:
+            vb_acc_line = vb_acc_line.rename(columns={"bombeado_vol": "bombeado_acumulado"})
+
+        vi_acc_line = (
+            vi_acc_src[vi_acc_src["saida_key"].map(_norm_text) == "acumulado"]
+            .groupby("Data", as_index=False)["infiltrado_vol"]
+            .sum()
+            .sort_values("Data")
+        )
+        if vi_acc_line.empty:
+            vi_daily = (
+                vi_acc_src[vi_acc_src["saida_key"].map(_norm_text) != "acumulado"]
+                .groupby("Data", as_index=False)["infiltrado_vol"]
+                .sum()
+                .sort_values("Data")
+            )
+            vi_acc_line = vi_daily.assign(infiltrado_acumulado=vi_daily["infiltrado_vol"].cumsum())[["Data", "infiltrado_acumulado"]]
+        else:
+            vi_acc_line = vi_acc_line.rename(columns={"infiltrado_vol": "infiltrado_acumulado"})
+
+        acc_chart_df = (
+            vb_acc_line.merge(vi_acc_line, on="Data", how="outer")
+            .sort_values("Data")
+            .dropna(subset=["Data"])
+        )
+
+        if acc_chart_df.empty:
+            st.info("Sem dados para o período selecionado.")
+        else:
+            acc_series = [
+                SeriesSpec(
+                    y="bombeado_acumulado",
+                    label="Volume Bombeado Acumulado",
+                    kind="line",
+                    marker="circle",
+                    color="#f97316",
+                    line_dash="dash",
+                    connect_gaps=True,
+                ),
+                SeriesSpec(
+                    y="infiltrado_acumulado",
+                    label="Volume Infiltrado Acumulado",
+                    kind="line",
+                    marker="diamond",
+                    color="#2563eb",
+                    line_dash="dash",
+                    connect_gaps=True,
+                ),
+            ]
+
+            fig_acc, _ = build_time_chart_plotly(
+                acc_chart_df,
+                x="Data",
+                series=acc_series,
+                title="Comparativo de volumes acumulados",
+                show_range_slider=False,
+                limit_points=200000,
+                return_insights=False,
+                height=460,
+            )
+            fig_acc.update_xaxes(
+                tickformat="%d/%m/%Y",
+                tickangle=-35,
+                dtick="D1",
+                tickmode="auto",
+                nticks=20,
+                automargin=True,
+            )
+            fig_acc.update_yaxes(title_text="Volume Acumulado (m\u00b3)", secondary_y=False)
+            fig_acc.for_each_trace(lambda tr: tr.update(line=dict(width=2.5, dash="dash")))
+
+            apply_graph_theme(fig_acc)
+
+            current_theme = st.session_state.get("graph_theme", "light")
+            y_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
+            fig_acc.update_yaxes(
+                title_font=dict(color=y_font_color, size=14),
+                tickfont=dict(color=y_font_color, size=12),
+                title_standoff=12,
+            )
+
+            legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
+            legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
+            legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
+            fig_acc.update_layout(
+                legend=dict(
+                    orientation="h",
+                    yanchor="top",
+                    y=-0.26,
+                    xanchor="left",
+                    x=0,
+                    font=dict(size=12, color=legend_font_color),
+                    bgcolor=legend_bg,
+                    bordercolor=legend_border,
+                    borderwidth=1,
+                ),
+                margin=dict(b=132, t=60, l=60, r=60),
+            )
+
+            st.plotly_chart(fig_acc, use_container_width=True)
 elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
 
