@@ -71,6 +71,9 @@ if "streamlit" not in sys.modules:
 
         def subheader(self, *args, **kwargs):
             return None
+        
+        def markdown(self, *args, **kwargs):  # ADD THIS METHOD
+            return None
 
         def radio(self, *args, **kwargs):
             options = args[1] if len(args) > 1 else kwargs.get("options", [])
