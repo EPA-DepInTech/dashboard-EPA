@@ -1,12 +1,10 @@
-import pandas as pd
-from pathlib import Path
 import plotly.express as px
 import re
 import streamlit as st
+import pandas as pd
 
-from core.state import get_uploaded_file, init_session_state, set_uploaded_file
+from core.state import get_uploaded_file, set_uploaded_file
 from services.dataset_service import build_dataset_from_excels
-
 
 # ================== TÍTULO ==================
 st.title("📊 Dashboard de Amostras")
@@ -29,6 +27,7 @@ def _process_upload(uploaded_files):
         return
 
     st.session_state["df_dict"] = result.df_dict  # padronizado
+
     # guarda datasets por arquivo para permitir seleção na página de gráficos
     df_dict_by_file: dict[str, dict] = {}
     for f in uploaded_files:
@@ -37,10 +36,12 @@ def _process_upload(uploaded_files):
             continue
         name = getattr(f, "name", f"arquivo_{len(df_dict_by_file)+1}")
         df_dict_by_file[name] = single.df_dict or {}
+
     if df_dict_by_file:
         st.session_state["df_dict_by_file"] = df_dict_by_file
     else:
         st.session_state.pop("df_dict_by_file", None)
+
     skipped_charts = [s for s in result.skipped if s.has_charts]
     if skipped_charts:
         st.success(f"Excel operacional carregado: {len(skipped_charts)} abas de gráfico ignoradas.")
@@ -53,12 +54,14 @@ def _norm_text(value: object) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
+
 def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
     for col in df.columns:
         n = _norm_text(col)
         if all(t in n for t in tokens):
             return col
     return None
+
 
 # ================== OVERVIEW ==================
 def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
@@ -136,6 +139,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
     with left:
         st.metric("Período", f"{period_months} meses", period_label)
         st.metric("Amostras de NA", f"{total_samples} medições")
+
         if not measurements_by_month.empty:
             fig_month = px.bar(
                 measurements_by_month,
@@ -166,6 +170,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
         dry_df = pd.DataFrame(
             {"Status": ["Seco", "Normal"], "Quantidade": [dry_count, normal_count]}
         )
+
         fig_dry = px.pie(
             dry_df,
             names="Status",
@@ -195,7 +200,8 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
             fig_types.update_layout(
                 margin=dict(l=20, r=20, t=70, b=30),
                 title_font=dict(size=22, color="#000"),
-                legend=dict(font=dict(size=16, color="#000")),
+                legend=dict(font=dict(size=16, color="#000"),
+                ),
                 font=dict(color="#000"),
                 title=dict(pad=dict(t=16, b=8)),
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -205,12 +211,14 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
 
         st.info("Gráficos adicionais carregados após processamento.")
 
+
 # ================== SIDEBAR ==================
 with st.sidebar:
     st.header("Entrada de dados")
     st.info("Use o botão abaixo para enviar o Excel.")
 
 st.subheader("Carregar Excel")
+
 uploaded_main = st.file_uploader(
     "Selecione os arquivos (.xlsx)",
     type=["xlsx"],
