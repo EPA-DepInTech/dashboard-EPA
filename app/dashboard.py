@@ -52,4 +52,5 @@ home_page = st.Page(str(BASE_DIR / "pages" / "dashboard_page.py"), title="Dashbo
 graph_page = st.Page(str(BASE_DIR / "pages" / "create_graph.py"), title="Criar gráfico", icon=":material/query_stats:")
 
 pg = st.navigation({"Pages": [home_page, graph_page]})
+
 pg.run()
