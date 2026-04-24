@@ -59,7 +59,7 @@ html, body, [class*="css"] {
 /* ================= CONTAINER PRINCIPAL ================= */
 .st-emotion-cache-zy6yx3 {
     width: 100%;
-    padding: 6rem 1rem 10rem;
+    padding: 1rem 1rem 10rem;
     max-width: initial;
     background: var(--page-bg);
 }

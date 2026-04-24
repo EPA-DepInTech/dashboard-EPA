@@ -104,17 +104,203 @@ def apply_graph_theme(fig):
 def render_graph_theme_toggle() -> None:
     if "graph_theme" not in st.session_state:
         st.session_state["graph_theme"] = "light"
-    top_left, top_right = st.columns([0.9, 0.1])
-    with top_right:
-        if st.button(
-            "🌗",
-            help="Alternar Tema dos Gráficos",
-            use_container_width=True,
-            key="global_graph_theme_toggle",
-        ):
-            st.session_state["graph_theme"] = (
-                "dark" if st.session_state["graph_theme"] == "light" else "light"
-            )
+    current_theme = st.session_state["graph_theme"]
+    if current_theme == "light":
+        next_theme = "dark"
+        button_label = "Light Mode"
+        button_icon = ":material/light_mode:"
+    else:
+        next_theme = "light"
+        button_label = "Dark Mode"
+        button_icon = ":material/dark_mode:"
+    if st.button(
+        button_label,
+        icon=button_icon,
+        use_container_width=True,
+        key="global_graph_theme_toggle",
+    ):
+        st.session_state["graph_theme"] = next_theme
+
+
+def render_graph_theme_header_toggle() -> None:
+    st.markdown(
+        """
+        <style>
+            .st-key-graph_theme_header_toggle {
+                position: fixed;
+                top: 0.3rem;
+                right: 3.75rem;
+                z-index: 999992;
+                width: auto;
+                max-width: max-content;
+                margin: 0;
+                padding: 0;
+                overflow: visible;
+                writing-mode: horizontal-tb;
+            }
+
+            .st-key-graph_theme_header_toggle > div {
+                width: auto !important;
+                max-width: max-content;
+            }
+
+            .st-key-graph_theme_header_toggle div[data-testid="stVerticalBlock"] {
+                gap: 0;
+                width: auto !important;
+                max-width: max-content;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton {
+                margin: 0;
+                width: auto;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button {
+                width: auto;
+                min-height: 2.5rem;
+                padding: 0.45rem 0.9rem;
+                border-radius: 14px;
+                border: 1px solid #0f766e;
+                background: #00352f;
+                color: #e5e7eb;
+                box-shadow: none;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button:hover {
+                background: #004d44;
+                color: #ffffff;
+                transform: none;
+                box-shadow: none;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button span[data-testid="stIconMaterial"] {
+                font-size: 1rem;
+            }
+
+            @media (max-width: 1100px) {
+                .st-key-graph_theme_header_toggle {
+                    right: 3.25rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(key="graph_theme_header_toggle"):
+        render_graph_theme_toggle()
+
+
+def render_create_graph_tabs(options: list[str]) -> str:
+    st.markdown(
+        """
+        <style>
+            .st-key-create_graph_header_bar {
+                position: sticky;
+                top: 0;
+                z-index: 999989;
+                margin: -5.95rem 10.75rem 0.85rem -1rem;
+                padding: 0.15rem 0 0;
+                background: #000000;
+                border-bottom: 1px solid #0f766e;
+            }
+
+            .st-key-create_graph_header_bar > div[data-testid="stHorizontalBlock"] {
+                align-items: end;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > label {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] {
+                margin: 0;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div {
+                overflow-x: auto;
+                overflow-y: hidden;
+                scrollbar-width: none;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div::-webkit-scrollbar {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] {
+                align-items: flex-end;
+                background: transparent;
+                display: flex;
+                flex-wrap: nowrap;
+                gap: 0.25rem;
+                margin: 0;
+                min-width: max-content;
+                padding: 0.2rem 0 0;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label {
+                background: #00352f;
+                border: 1px solid #0f766e;
+                border-bottom: none;
+                border-radius: 8px 8px 0 0;
+                color: #e5e7eb;
+                min-height: 2.5rem;
+                padding: 0.55rem 1rem;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:hover {
+                background: #004d44;
+                color: #ffffff;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) {
+                background: #b7c0dd;
+                border-color: #b7c0dd;
+                box-shadow: 0 -2px 10px rgba(183, 192, 221, 0.18);
+                color: #001f1c !important;
+                font-weight: 700;
+                position: relative;
+                top: 1px;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) p {
+                color: #001f1c !important;
+                font-weight: 700;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label > div:first-child {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] p {
+                font-size: 0.92rem;
+                margin: 0;
+                white-space: nowrap;
+            }
+
+            .st-key-create_graph_header_bar .stButton > button {
+                min-height: 2.65rem;
+                margin-bottom: 0.15rem;
+            }
+
+            @media (max-width: 1100px) {
+                .st-key-create_graph_header_bar {
+                    margin: -5.65rem 8.75rem 0.85rem -1rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    return st.radio(
+        "Visualizacao",
+        options,
+        index=0,
+        horizontal=True,
+        key="create_graph_subpage",
+    )
+
 
 def _norm_key(value: object) -> str:
     s = str(value).strip().lower()
@@ -773,15 +959,13 @@ def _copy_keys(src: dict, keys: list[str], dest: dict):
 if isinstance(df_by_file, dict) and df_by_file:
     na_candidates = [f for f, d in df_by_file.items() if d and any(k in d for k in ("NA Semanal", "Volume Bombeado", "Volume Infiltrado"))]
     insitu_candidates = [f for f, d in df_by_file.items()]
-    with st.sidebar:
-        st.subheader("Arquivos fonte")
-        if na_candidates:
-            selected_na_file = st.selectbox("Arquivo para NA/Volume", na_candidates, index=0, key="sel_na_file")
-        if insitu_candidates:
-            default_insitu_idx = 0
-            if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
-                default_insitu_idx = 1
-            selected_insitu_file = st.selectbox("Arquivo para In situ", insitu_candidates, index=default_insitu_idx, key="sel_insitu_file")
+    if na_candidates:
+        selected_na_file = na_candidates[0]
+    if insitu_candidates:
+        default_insitu_idx = 0
+        if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
+            default_insitu_idx = 1
+        selected_insitu_file = insitu_candidates[default_insitu_idx]
 
     if selected_na_file or selected_insitu_file:
         combined: dict[str, pd.DataFrame] = {}
@@ -840,16 +1024,41 @@ if in_situ_pontos is not None or in_situ_geral is not None:
 subpage_options.append("In situ aprofundado")
 subpage_options.append("Laboratorial")
 
-with st.sidebar:
-    st.subheader("Abas")
-    subpage = st.radio(
-        "Selecionar grafico",
-        subpage_options,
-        index=0,
-        horizontal=False,
-    )
+subpage = st.session_state.get("create_graph_subpage", "Operacional")
+if subpage not in subpage_options:
+    subpage = "Operacional"
+st.session_state["create_graph_subpage"] = subpage
 
-render_graph_theme_toggle()
+if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"):
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"] {
+                display: none;
+            }
+
+            button[kind="header"],
+            [data-testid="collapsedControl"] {
+                display: none;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] > div:first-child {
+                padding-top: 0.75rem !important;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] .stSubheader {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_graph_theme_header_toggle()
+else:
+    theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
+    with theme_col:
+        render_graph_theme_toggle()
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
@@ -2338,7 +2547,7 @@ elif subpage == "In situ aprofundado":
                 break
 
     if file_obj is None:
-        st.info("Selecione um arquivo em 'Arquivo para In situ' na barra lateral.")
+        st.info("Nao foi encontrado um arquivo de In situ para esta visualizacao.")
         st.stop()
 
     try:
