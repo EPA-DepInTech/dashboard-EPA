@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
+from components.period_selector import period_selector
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
@@ -869,37 +870,25 @@ if subpage == "Operacional":
 
     min_date = vb_plot["Data"].min()
     max_date = vb_plot["Data"].max()
-    default_range = None
-    if pd.notna(min_date) and pd.notna(max_date):
-        start_default = max(min_date, max_date - pd.DateOffset(months=1))
-        default_range = (start_default.date(), max_date.date())
 
-    ctrl_cols = st.columns([2.4, 1.6], gap="small")
     default_points = non_acc_points if len(non_acc_points) <= 12 else non_acc_points[:12]
-    selected_points = ctrl_cols[0].multiselect(
-        "Pocos",
+    selected_points = st.multiselect(
+        "Poços",
         non_acc_points,
         default=default_points,
         key="avg_vb_points",
     )
-    selected_period = ctrl_cols[1].date_input(
-        "Periodo",
-        value=default_range,
-        format="DD/MM/YYYY",
-        key="avg_vb_period",
-    )
+    vb_start, vb_end = period_selector("avg_vb", min_date, max_date, default_preset="1 mês")
 
     if not selected_points:
         st.info("Selecione ao menos um poco para exibir o grafico.")
         st.stop()
 
     vb_plot = vb_plot[vb_plot["poco_key"].isin(selected_points)].copy()
-    if isinstance(selected_period, (list, tuple)) and len(selected_period) == 2:
-        start, end = selected_period
-        if start:
-            vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(start)]
-        if end:
-            vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(end)]
+    if vb_start:
+        vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(vb_end)]
 
     if vb_plot.empty:
         st.info("Sem dados de volume bombeado apos aplicar os filtros.")
@@ -919,12 +908,10 @@ if subpage == "Operacional":
     vb_acc["Data"] = pd.to_datetime(vb_acc["Data"], errors="coerce")
     vb_acc["poco_key"] = vb_acc["poco_key"].astype(str).str.strip().str.upper()
     vb_acc = vb_acc.dropna(subset=["Data", "poco_key"])
-    if isinstance(selected_period, (list, tuple)) and len(selected_period) == 2:
-        start, end = selected_period
-        if start:
-            vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(start)]
-        if end:
-            vb_acc = vb_acc[vb_acc["Data"] <= pd.to_datetime(end)]
+    if vb_start:
+        vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_acc = vb_acc[vb_acc["Data"] <= pd.to_datetime(vb_end)]
 
     acc_line = (
         vb_acc[vb_acc["poco_key"].map(_norm_text) == "acumulado"]
@@ -1060,36 +1047,24 @@ if subpage == "Operacional":
         else:
             min_vi_date = vi_plot["Data"].min()
             max_vi_date = vi_plot["Data"].max()
-            default_vi_range = None
-            if pd.notna(min_vi_date) and pd.notna(max_vi_date):
-                start_vi_default = max(min_vi_date, max_vi_date - pd.DateOffset(months=1))
-                default_vi_range = (start_vi_default.date(), max_vi_date.date())
 
-            vi_ctrl_cols = st.columns([2.4, 1.6], gap="small")
             default_outputs = non_acc_outputs if len(non_acc_outputs) <= 12 else non_acc_outputs[:12]
-            selected_outputs = vi_ctrl_cols[0].multiselect(
+            selected_outputs = st.multiselect(
                 "Saídas",
                 non_acc_outputs,
                 default=default_outputs,
                 key="avg_vi_outputs",
             )
-            selected_vi_period = vi_ctrl_cols[1].date_input(
-                "Periodo infiltrado",
-                value=default_vi_range,
-                format="DD/MM/YYYY",
-                key="avg_vi_period",
-            )
+            vi_start, vi_end = period_selector("avg_vi", min_vi_date, max_vi_date, default_preset="1 mês")
 
             if not selected_outputs:
                 st.info("Selecione ao menos uma saída para exibir o grafico.")
             else:
                 vi_plot = vi_plot[vi_plot["saida_key"].isin(selected_outputs)].copy()
-                if isinstance(selected_vi_period, (list, tuple)) and len(selected_vi_period) == 2:
-                    start_vi, end_vi = selected_vi_period
-                    if start_vi:
-                        vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(start_vi)]
-                    if end_vi:
-                        vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(end_vi)]
+                if vi_start:
+                    vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(vi_start)]
+                if vi_end:
+                    vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(vi_end)]
 
                 if vi_plot.empty:
                     st.info("Sem dados de volume infiltrado apos aplicar os filtros.")
@@ -1107,12 +1082,10 @@ if subpage == "Operacional":
                     vi_acc["Data"] = pd.to_datetime(vi_acc["Data"], errors="coerce")
                     vi_acc["saida_key"] = vi_acc["saida_key"].astype(str).str.strip().str.upper()
                     vi_acc = vi_acc.dropna(subset=["Data", "saida_key"])
-                    if isinstance(selected_vi_period, (list, tuple)) and len(selected_vi_period) == 2:
-                        start_vi, end_vi = selected_vi_period
-                        if start_vi:
-                            vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(start_vi)]
-                        if end_vi:
-                            vi_acc = vi_acc[vi_acc["Data"] <= pd.to_datetime(end_vi)]
+                    if vi_start:
+                        vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(vi_start)]
+                    if vi_end:
+                        vi_acc = vi_acc[vi_acc["Data"] <= pd.to_datetime(vi_end)]
 
                     vi_acc_line = (
                         vi_acc[vi_acc["saida_key"].map(_norm_text) == "acumulado"]
@@ -1255,25 +1228,15 @@ if subpage == "Operacional":
     else:
         max_acc_date = all_dates.max()
         min_acc_date = all_dates.min()
-        start_acc_default = max(min_acc_date, max_acc_date - pd.DateOffset(months=1))
-        default_acc_range = (start_acc_default.date(), max_acc_date.date())
 
-        acc_cols = st.columns([2.4, 1.6], gap="small")
-        selected_acc_period = acc_cols[1].date_input(
-            "Periodo acumulado",
-            value=default_acc_range,
-            format="DD/MM/YYYY",
-            key="avg_acc_period",
-        )
+        acc_start, acc_end = period_selector("avg_acc", min_acc_date, max_acc_date, default_preset="1 mês")
 
-        if isinstance(selected_acc_period, (list, tuple)) and len(selected_acc_period) == 2:
-            acc_start, acc_end = selected_acc_period
-            if acc_start:
-                vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
-                vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
-            if acc_end:
-                vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
-                vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
+        if acc_start:
+            vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
+            vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
+        if acc_end:
+            vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
+            vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
 
         vb_acc_line = (
             vb_acc_src[vb_acc_src["poco_key"].map(_norm_text) == "acumulado"]
@@ -2362,41 +2325,23 @@ elif subpage == "In situ aprofundado":
 
     date_min = df_long["DataHora"].min()
     date_max = df_long["DataHora"].max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        start_default = max(date_min, date_max - pd.Timedelta(days=365))
-        default_range = (start_default.date(), date_max.date())
 
-    ctrl_cols = st.columns([2, 2, 2, 1.4], gap="small")
+    ctrl_cols = st.columns([2, 2, 2], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
     param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
     param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
     pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
-    default_pontos: list[str] = []
-    if default_range:
-        start_d, end_d = default_range
-        df_default = df_long.copy()
-        if start_d:
-            df_default = df_default[df_default["DataHora"] >= pd.to_datetime(start_d)]
-        if end_d:
-            df_default = df_default[df_default["DataHora"] <= pd.to_datetime(end_d)]
-        pontos_com_dados = sorted(df_default["poco_id"].dropna().unique().tolist())
-        if pontos_com_dados:
-            default_pontos = [pontos_com_dados[0]]
-    if not default_pontos and pontos:
-        default_pontos = [pontos[0]]
+    default_pontos: list[str] = [pontos[0]] if pontos else []
     pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
-    periodo = ctrl_cols[3].date_input("Período", value=default_range, format="DD/MM/YYYY")
+    aps_start, aps_end = period_selector("aps_insitu", date_min, date_max, default_preset="12 meses")
 
     data_filt = df_long.copy()
     if pontos_sel:
         data_filt = data_filt[data_filt["poco_id"].isin(pontos_sel)]
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        start, end = periodo
-        if start:
-            data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(start)]
-        if end:
-            data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(end)]
+    if aps_start:
+        data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(aps_start)]
+    if aps_end:
+        data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(aps_end)]
 
     df_plot1 = pivot_in_situ_for_plot(data_filt, param1)
     if df_plot1.empty:
@@ -2541,13 +2486,10 @@ elif subpage == "Laboratorial":
 
     date_min = df_lab["data_coleta"].min()
     date_max = df_lab["data_coleta"].max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        default_range = (date_min.date(), date_max.date())
 
     sample_ids = sorted(df_lab["identificacao_amostra"].dropna().unique().tolist())
 
-    ctrl_cols = st.columns([3.5, 3.5, 3], gap="small")
+    lab_ctrl_cols = st.columns([1, 1], gap="small")
     default_params = params[: min(6, len(params))]
     if "lab_selected_params" not in st.session_state:
         st.session_state["lab_selected_params"] = default_params
@@ -2560,32 +2502,30 @@ elif subpage == "Laboratorial":
     if st.session_state.get("lab_select_all_trigger", False):
         st.session_state["lab_selected_params"] = params.copy()
         st.session_state["lab_select_all_trigger"] = False
-    selected_params = ctrl_cols[0].multiselect(
+    selected_params = lab_ctrl_cols[0].multiselect(
         "Parâmetros",
         params,
         key="lab_selected_params",
     )
-    if ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
+    if lab_ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
         st.session_state["lab_select_all_trigger"] = True
         st.rerun()
-    selected_samples = ctrl_cols[1].multiselect(
+    selected_samples = lab_ctrl_cols[1].multiselect(
         "Identificação da amostra",
         sample_ids,
         default=sample_ids[:3] if sample_ids else [],
     )
-    periodo = ctrl_cols[2].date_input("Período", value=default_range, format="DD/MM/YYYY")
+    lab_start, lab_end = period_selector("lab", date_min, date_max, default_preset="Tudo")
 
     data_filt = df_lab.copy()
     if selected_params:
         data_filt = data_filt[data_filt["parametro"].isin(selected_params)]
     if selected_samples:
         data_filt = data_filt[data_filt["identificacao_amostra"].isin(selected_samples)]
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        start, end = periodo
-        if start:
-            data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(start)]
-        if end:
-            data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(end)]
+    if lab_start:
+        data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(lab_start)]
+    if lab_end:
+        data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(lab_end)]
 
     if data_filt.empty:
         st.info("Sem dados após os filtros selecionados.")
@@ -2711,9 +2651,6 @@ elif subpage == "In situ":
 
     date_min = pd.to_datetime(data_source["Data"], errors="coerce").min()
     date_max = pd.to_datetime(data_source["Data"], errors="coerce").max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        default_range = (date_min.date(), date_max.date())
 
     if mode == "Por ponto":
         points = sorted(data_source["Ponto"].dropna().unique().tolist())
@@ -2721,15 +2658,15 @@ elif subpage == "In situ":
             st.info("Nenhum ponto encontrado na aba In Situ.")
             st.stop()
 
-        ctrl_cols = st.columns([2, 2, 1.4], gap="small")
-        selected_param = ctrl_cols[0].selectbox("Parametro", params)
+        is_ctrl_cols = st.columns([1, 1], gap="small")
+        selected_param = is_ctrl_cols[0].selectbox("Parametro", params)
         default_points = points if len(points) <= 8 else points[:8]
-        selected_points = ctrl_cols[1].multiselect(
+        selected_points = is_ctrl_cols[1].multiselect(
             "Pontos",
             points,
             default=default_points,
         )
-        date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
+        is_start, is_end = period_selector("is_pontos", date_min, date_max, default_preset="Tudo")
 
         if not selected_points:
             st.info("Selecione ao menos um ponto para exibir o grafico.")
@@ -2744,34 +2681,31 @@ elif subpage == "In situ":
             points = sorted(data_source["Ponto"].dropna().unique().tolist())
 
         if points:
-            ctrl_cols = st.columns([2, 2, 1.4], gap="small")
-            selected_param = ctrl_cols[0].selectbox("Parametro", params)
+            is_ctrl_cols = st.columns([1, 1], gap="small")
+            selected_param = is_ctrl_cols[0].selectbox("Parametro", params)
             default_points = points if len(points) <= 3 else points[:3]
-            selected_points = ctrl_cols[1].multiselect(
+            selected_points = is_ctrl_cols[1].multiselect(
                 "Pontos gerais",
                 points,
                 default=default_points,
             )
-            date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
+            is_start, is_end = period_selector("is_geral_pts", date_min, date_max, default_preset="Tudo")
             if not selected_points:
                 st.info("Selecione ao menos um ponto para exibir o grafico.")
                 st.stop()
             data = data_source[data_source["Ponto"].isin(selected_points)].copy()
         else:
-            ctrl_cols = st.columns([2, 1.4], gap="small")
-            selected_param = ctrl_cols[0].selectbox("Parametro", params)
-            date_input = ctrl_cols[1].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
+            selected_param = st.selectbox("Parametro", params)
+            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
             data = data_source.copy()
 
         data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
         data = data.dropna(subset=["Data"])
 
-    if isinstance(date_input, (list, tuple)) and len(date_input) == 2:
-        start, end = date_input
-        if start:
-            data = data[data["Data"] >= pd.to_datetime(start)]
-        if end:
-            data = data[data["Data"] <= pd.to_datetime(end)]
+    if is_start:
+        data = data[data["Data"] >= pd.to_datetime(is_start)]
+    if is_end:
+        data = data[data["Data"] <= pd.to_datetime(is_end)]
 
     if mode == "Por ponto":
         chart_df = (
