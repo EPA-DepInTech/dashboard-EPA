@@ -72,7 +72,7 @@ if "streamlit" not in sys.modules:
         def subheader(self, *args, **kwargs):
             return None
         
-        def markdown(self, *args, **kwargs):  # ADD THIS METHOD
+        def markdown(self, *args, **kwargs):
             return None
 
         def radio(self, *args, **kwargs):

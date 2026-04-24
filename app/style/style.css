@@ -167,6 +167,46 @@ section[data-testid="stSidebar"] h3 {
     border-radius: 12px;
 }
 
+/* ================= SELETOR DE PERÍODO ================= */
+
+/* Pill não selecionado */
+[data-testid="stPillsButton"] {
+    border-radius: 20px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    padding: 0.25rem 0.8rem !important;
+    transition: all 0.18s ease !important;
+    border: 1.5px solid #cbd5e1 !important;
+    background: #f8fafc !important;
+    color: #334155 !important;
+}
+
+/* Pill não selecionado — hover */
+[data-testid="stPillsButton"]:not([aria-pressed="true"]):hover {
+    border-color: #004d44 !important;
+    color: #004d44 !important;
+    background: rgba(0, 77, 68, 0.06) !important;
+    box-shadow: 0 2px 8px rgba(0, 77, 68, 0.12) !important;
+}
+
+/* Pill selecionado */
+[data-testid="stPillsButton"][aria-pressed="true"] {
+    background: linear-gradient(135deg, #004d44, #006b5c) !important;
+    border-color: #004d44 !important;
+    color: #ffffff !important;
+    box-shadow: 0 3px 10px rgba(0, 77, 68, 0.28) !important;
+}
+
+/* Label "Período" acima dos pills */
+[data-testid="stPillsLabel"] {
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    color: #64748b !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    margin-bottom: 0.25rem !important;
+}
+
 /* ================= ANIMAÇÕES ================= */
 @keyframes pulse {
     0% {
