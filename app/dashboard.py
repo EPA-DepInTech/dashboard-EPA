@@ -49,7 +49,21 @@ if not hasattr(st, "Page") or not hasattr(st, "navigation"):
     st.stop()
 
 home_page = st.Page(str(BASE_DIR / "pages" / "dashboard_page.py"), title="Dashboard", icon=":material/dashboard:")
-graph_page = st.Page(str(BASE_DIR / "pages" / "create_graph.py"), title="Criar gráfico", icon=":material/query_stats:")
+graph_operacional_page = st.Page(str(BASE_DIR / "pages" / "create_graph_operacional.py"), title="Operacional", icon=":material/query_stats:")
+graph_visualizacao_page = st.Page(str(BASE_DIR / "pages" / "create_graph_visualizacao_aprofundada.py"), title="Visualizacao aprofundada", icon=":material/analytics:")
+graph_in_situ_page = st.Page(str(BASE_DIR / "pages" / "create_graph_in_situ.py"), title="In situ", icon=":material/science:")
+graph_in_situ_aprofundado_page = st.Page(str(BASE_DIR / "pages" / "create_graph_in_situ_aprofundado.py"), title="In situ aprofundado", icon=":material/monitoring:")
+graph_laboratorial_page = st.Page(str(BASE_DIR / "pages" / "create_graph_laboratorial.py"), title="Laboratorial", icon=":material/biotech:")
 
-pg = st.navigation({"Pages": [home_page, graph_page]})
+pg = st.navigation(
+    [
+        home_page,
+        graph_operacional_page,
+        graph_visualizacao_page,
+        graph_in_situ_page,
+        graph_in_situ_aprofundado_page,
+        graph_laboratorial_page,
+    ],
+    position="top",
+)
 pg.run()
