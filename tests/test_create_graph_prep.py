@@ -41,77 +41,7 @@ def _load_create_graph_helpers():
     exec(helper_source, module.__dict__)
     return module
 
-
-        def radio(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-    class _DummyStreamlit:
-        def __init__(self):
-            self.session_state = {}
-            self.sidebar = _DummySidebar()
-
-        def title(self, *args, **kwargs):
-            return None
-
-        def info(self, *args, **kwargs):
-            return None
-
-        def stop(self, *args, **kwargs):
-            return None
-
-        def error(self, *args, **kwargs):
-            return None
-
-        def warning(self, *args, **kwargs):
-            return None
-
-        def subheader(self, *args, **kwargs):
-            return None
-        
-        def markdown(self, *args, **kwargs):
-            return None
-
-        def radio(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-        def pills(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            default = kwargs.get("default")
-            return default if default is not None else (options[0] if options else None)
-
-        def checkbox(self, *args, **kwargs):
-            return kwargs.get("value", False)
-
-        def selectbox(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-        def multiselect(self, *args, **kwargs):
-            default = kwargs.get("default", [])
-            return default if default else []
-
-        def button(self, *args, **kwargs):
-            return False
-
-        def date_input(self, *args, **kwargs):
-            return kwargs.get("value")
-
-        def plotly_chart(self, *args, **kwargs):
-            return None
-
-        def columns(self, *args, **kwargs):
-            spec = args[0] if args else kwargs.get("spec", 1)
-            if isinstance(spec, int):
-                n = spec
-            else:
-                n = len(spec)
-            return [_DummyColumn() for _ in range(n)]
-
-    sys.modules["streamlit"] = _DummyStreamlit()
-from app.pages import create_graph as cg  # noqa: E402
-importlib.reload(cg)
+cg = _load_create_graph_helpers()
 
 
 def _rand_series(seed: int, n: int) -> list[float]:
