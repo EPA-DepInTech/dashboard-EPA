@@ -1194,20 +1194,14 @@ if subpage == "Operacional":
         else None
     )
 
-    apply_graph_theme(fig)
+    
 
     # Garante boa legibilidade das legendas dos eixos Y nos dois temas.
-    current_theme = st.session_state.get("graph_theme", "light")
-    y_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
     fig.update_yaxes(
-        title_font=dict(color=y_font_color, size=14),
-        tickfont=dict(color=y_font_color, size=12),
         title_standoff=12,
         secondary_y=False,
     )
     fig.update_yaxes(
-        title_font=dict(color=y_font_color, size=14),
-        tickfont=dict(color=y_font_color, size=12),
         title_standoff=12,
         secondary_y=True,
     )
@@ -1217,9 +1211,7 @@ if subpage == "Operacional":
     legend_rows = max(1, (num_legend_items + 7) // 8)  # ~8 itens por linha
     bottom_margin = 142 + legend_rows * 24
     legend_y = -0.32 - max(0, legend_rows - 1) * 0.10
-    legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
-    legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
-    legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
+
     fig.update_layout(
         legend=dict(
             orientation="h",
@@ -1227,9 +1219,6 @@ if subpage == "Operacional":
             y=legend_y,
             xanchor="left",
             x=0,
-            font=dict(size=12, color=legend_font_color),
-            bgcolor=legend_bg,
-            bordercolor=legend_border,
             borderwidth=1,
             itemwidth=72,
         ),
@@ -1371,19 +1360,13 @@ if subpage == "Operacional":
                         else None
                     )
 
-                    apply_graph_theme(fig_vi)
+                   
 
-                    current_theme = st.session_state.get("graph_theme", "light")
-                    y_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
                     fig_vi.update_yaxes(
-                        title_font=dict(color=y_font_color, size=14),
-                        tickfont=dict(color=y_font_color, size=12),
                         title_standoff=12,
                         secondary_y=False,
                     )
                     fig_vi.update_yaxes(
-                        title_font=dict(color=y_font_color, size=14),
-                        tickfont=dict(color=y_font_color, size=12),
                         title_standoff=12,
                         secondary_y=True,
                     )
@@ -1392,9 +1375,7 @@ if subpage == "Operacional":
                     vi_legend_rows = max(1, (num_vi_legend_items + 7) // 8)
                     vi_bottom_margin = 142 + vi_legend_rows * 24
                     vi_legend_y = -0.32 - max(0, vi_legend_rows - 1) * 0.10
-                    legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
-                    legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
-                    legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
+                
                     fig_vi.update_layout(
                         legend=dict(
                             orientation="h",
@@ -1402,9 +1383,6 @@ if subpage == "Operacional":
                             y=vi_legend_y,
                             xanchor="left",
                             x=0,
-                            font=dict(size=12, color=legend_font_color),
-                            bgcolor=legend_bg,
-                            bordercolor=legend_border,
                             borderwidth=1,
                             itemwidth=72,
                         ),
@@ -1511,56 +1489,22 @@ if subpage == "Operacional":
                 ),
             ]
 
-            fig_acc, _ = build_time_chart_plotly(
-                acc_chart_df,
-                x="Data",
-                series=acc_series,
-                title="Comparativo de volumes acumulados",
-                show_range_slider=False,
-                limit_points=200000,
-                return_insights=False,
-                height=460,
-            )
-            fig_acc.update_xaxes(
-                tickformat="%d/%m/%Y",
-                tickangle=-35,
-                dtick="D1",
-                tickmode="auto",
-                nticks=20,
-                automargin=True,
-            )
-            fig_acc.update_yaxes(title_text="Volume Acumulado (m\u00b3)", secondary_y=False)
-            fig_acc.for_each_trace(lambda tr: tr.update(line=dict(width=2.5, dash="dash")))
+    fig, _ = build_time_chart_plotly(
+        acc_chart_df,
+        x="Data",
+        series=acc_series,
+        title="Comparativo de volumes acumulados",
+        show_range_slider=False,
+        limit_points=200000,
+        return_insights=False,
+        height=460,
+    )
+    fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
+    if any(s.axis == "y2" for s in series):
+        fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
 
-            apply_graph_theme(fig_acc)
-
-            current_theme = st.session_state.get("graph_theme", "light")
-            y_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
-            fig_acc.update_yaxes(
-                title_font=dict(color=y_font_color, size=14),
-                tickfont=dict(color=y_font_color, size=12),
-                title_standoff=12,
-            )
-
-            legend_font_color = "#f8fafc" if current_theme == "dark" else "#111827"
-            legend_bg = "rgba(2, 6, 23, 0.88)" if current_theme == "dark" else "rgba(255, 255, 255, 0.92)"
-            legend_border = "#334155" if current_theme == "dark" else "#cbd5e1"
-            fig_acc.update_layout(
-                legend=dict(
-                    orientation="h",
-                    yanchor="top",
-                    y=-0.26,
-                    xanchor="left",
-                    x=0,
-                    font=dict(size=12, color=legend_font_color),
-                    bgcolor=legend_bg,
-                    bordercolor=legend_border,
-                    borderwidth=1,
-                ),
-                margin=dict(b=132, t=60, l=60, r=60),
-            )
-
-            st.plotly_chart(fig_acc, use_container_width=True)
+    
+    st.plotly_chart(fig, use_container_width=True)
 elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
 
@@ -2257,7 +2201,7 @@ elif subpage == "Visualizacao aprofundada":
         fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
         fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-        apply_graph_theme(fig2)
+        
         st.plotly_chart(fig2, use_container_width=True)
     else:
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
@@ -2625,7 +2569,7 @@ elif subpage == "In situ aprofundado":
     fig_ap.update_yaxes(title_text=param1, secondary_y=False)
     if any(s.axis == "y2" for s in series):
         fig_ap.update_yaxes(title_text=param2, secondary_y=True)
-    apply_graph_theme(fig_ap)
+    
     st.plotly_chart(fig_ap, use_container_width=True)
 
     with st.expander("Tabela detalhada", expanded=False):
@@ -2755,8 +2699,7 @@ elif subpage == "Laboratorial":
         st.info("Nenhum resultado numérico disponível para os parâmetros selecionados.")
         st.stop()
 
-    current_theme = st.session_state.get("graph_theme", "light")
-    if current_theme == "dark":
+
         palette = [
             "#60a5fa",
             "#34d399",
@@ -2804,7 +2747,7 @@ elif subpage == "Laboratorial":
     )
     fig_lab.update_xaxes(title_text="Data de Coleta")
     fig_lab.update_yaxes(title_text="Resultado")
-    apply_graph_theme(fig_lab)
+   
     fig_lab.update_layout(
         legend=dict(
             orientation="v",
