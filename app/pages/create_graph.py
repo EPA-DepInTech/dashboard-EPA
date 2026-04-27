@@ -1,6 +1,7 @@
 ﻿import re
 import unicodedata
 import io
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -11,115 +12,110 @@ from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
 
+def ensure_global_css_loaded() -> None:
+    if st.session_state.get("_global_css_loaded"):
+        return
+    css_path = Path(__file__).resolve().parents[1] / "style" / "style.css"
+    if css_path.exists():
+        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+        st.session_state["_global_css_loaded"] = True
+
+
+ensure_global_css_loaded()
+
+
 def apply_graph_theme(fig):
-    theme = st.session_state.get('graph_theme', 'light')
     if 'graph_theme' not in st.session_state:
         st.session_state['graph_theme'] = 'light'
+    theme = st.session_state['graph_theme']
     if theme == 'dark':
-        dark_layout = dict(
+        axis_style = dict(
+            gridcolor="#3f3f46",
+            zerolinecolor="#71717a",
+            linecolor="#e5e7eb",
+            tickfont=dict(color="#e5e7eb", size=13),
+            title_font=dict(color="#f8fafc", size=15),
+            showline=True,
+            showgrid=True,
+        )
+        fig.update_layout(
             template='plotly_dark',
             paper_bgcolor="#000000",
             plot_bgcolor="#000000",
             font_color="#e5e7eb",
             title_font=dict(color='#f8fafc', size=20, family='Segoe UI, Arial'),
-            xaxis=dict(
-                gridcolor="#000000",
-                zerolinecolor="#D1CECE",
-                linecolor="#919191",
-                tickfont=dict(color="#e5e7eb", size=13),
-                title_font=dict(color="#f1f5f9", size=15),
-                showline=True,
-                showgrid=True,
-            ),
-            yaxis=dict(
-                gridcolor="#BBBBBB",
-                zerolinecolor="#B9B9B9",
-                linecolor='#f8fafc',
-                tickfont=dict(color="#e5e7eb", size=13),
-                title_font=dict(color="#f1f5f9", size=15),
-                showline=True,
-                showgrid=True,
-            ),
             legend=dict(
                 bgcolor="rgba(2, 6, 23, 0.88)",
                 bordercolor='#334155',
                 font=dict(color='#f8fafc', size=13),
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='right',
-                x=1
             ),
             colorway=[
                 '#2563eb', '#16a34a', '#f59e42', '#e11d48', '#7c3aed',
                 '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
             ],
         )
-        fig.update_layout(**dark_layout)
     else:
-        light_layout = dict(
+        axis_style = dict(
+            gridcolor='#e5e7eb',
+            zerolinecolor='#e5e7eb',
+            linecolor="#334155",
+            tickfont=dict(color='#181c1f', size=13),
+            title_font=dict(color="#111827", size=15),
+            showline=True,
+            showgrid=True,
+        )
+        fig.update_layout(
             template='plotly_white',
             paper_bgcolor='#f8fafc',
             plot_bgcolor='#f8fafc',
             font_color="#000000",
             title_font=dict(color="#181a1b", size=20, family='Segoe UI, Arial'),
-            
-            xaxis=dict(
-                gridcolor='#e5e7eb',
-                zerolinecolor='#e5e7eb',
-                linecolor="#000000",
-                tickfont=dict(color='#181c1f', size=13),
-                title_font=dict(color="#0b0c0c", size=15),
-                showline=True,
-                showgrid=True,
-            ),
-            yaxis=dict(
-                gridcolor='#e5e7eb',
-                zerolinecolor='#e5e7eb',
-                linecolor="#4B4B4B",
-                tickfont=dict(color="#334155", size=12),
-                title_font=dict(color="#334155", size=13),
-                showline=True,
-                showgrid=True,
-            ),
             legend=dict(
                 bgcolor='rgba(255, 255, 255, 0.92)',
                 bordercolor='#cbd5e1',
                 font=dict(color="#111827", size=13),
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='right',
-                x=1
             ),
             colorway=[
                 '#2563eb', "#003b16", '#f59e42', '#e11d48', "#2f0675",
                 "#4597bd", '#facc15', '#f472b6', '#a3e635', '#f87171',
             ],
         )
-        fig.update_layout(**light_layout)
+    fig.update_xaxes(**axis_style)
+    fig.update_yaxes(**axis_style)
+    fig.update_layout(
+        yaxis2=dict(
+            gridcolor=axis_style["gridcolor"],
+            zerolinecolor=axis_style["zerolinecolor"],
+            linecolor=axis_style["linecolor"],
+            tickfont=axis_style["tickfont"],
+            title=dict(font=axis_style["title_font"]),
+            showline=axis_style["showline"],
+            showgrid=axis_style["showgrid"],
+        )
+    )
     return fig
 
 
-def render_graph_theme_toggle() -> None:
+def render_graph_theme_toggle(key_suffix: str = "default") -> None:
     if "graph_theme" not in st.session_state:
         st.session_state["graph_theme"] = "light"
     current_theme = st.session_state["graph_theme"]
     if current_theme == "light":
         next_theme = "dark"
-        button_label = "Light Mode"
-        button_icon = ":material/light_mode:"
-    else:
-        next_theme = "light"
         button_label = "Dark Mode"
         button_icon = ":material/dark_mode:"
+    else:
+        next_theme = "light"
+        button_label = "Light Mode"
+        button_icon = ":material/light_mode:"
     if st.button(
         button_label,
         icon=button_icon,
         use_container_width=True,
-        key="global_graph_theme_toggle",
+        key=f"global_graph_theme_toggle_{key_suffix}",
     ):
         st.session_state["graph_theme"] = next_theme
+        st.rerun()
 
 
 def render_graph_theme_header_toggle() -> None:
@@ -189,7 +185,7 @@ def render_graph_theme_header_toggle() -> None:
         unsafe_allow_html=True,
     )
     with st.container(key="graph_theme_header_toggle"):
-        render_graph_theme_toggle()
+        render_graph_theme_toggle("header")
 
 
 def render_create_graph_tabs(options: list[str]) -> str:
@@ -966,6 +962,13 @@ if isinstance(df_by_file, dict) and df_by_file:
         if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
             default_insitu_idx = 1
         selected_insitu_file = insitu_candidates[default_insitu_idx]
+    if na_candidates:
+        selected_na_file = na_candidates[0]
+    if insitu_candidates:
+        default_insitu_idx = 0
+        if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
+            default_insitu_idx = 1
+        selected_insitu_file = insitu_candidates[default_insitu_idx]
 
     if selected_na_file or selected_insitu_file:
         combined: dict[str, pd.DataFrame] = {}
@@ -1098,6 +1101,10 @@ if subpage == "Operacional":
         vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(vb_start)]
     if vb_end:
         vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(vb_end)]
+    if vb_start:
+        vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(vb_end)]
 
     if vb_plot.empty:
         st.info("Sem dados de volume bombeado apos aplicar os filtros.")
@@ -1117,6 +1124,10 @@ if subpage == "Operacional":
     vb_acc["Data"] = pd.to_datetime(vb_acc["Data"], errors="coerce")
     vb_acc["poco_key"] = vb_acc["poco_key"].astype(str).str.strip().str.upper()
     vb_acc = vb_acc.dropna(subset=["Data", "poco_key"])
+    if vb_start:
+        vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_acc = vb_acc[vb_acc["Data"] <= pd.to_datetime(vb_end)]
     if vb_start:
         vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(vb_start)]
     if vb_end:
@@ -1225,6 +1236,7 @@ if subpage == "Operacional":
         margin=dict(b=bottom_margin, t=60, l=60, r=60),
     )
     fig.update_xaxes(automargin=True)
+    apply_graph_theme(fig)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1263,6 +1275,10 @@ if subpage == "Operacional":
                     vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(vi_start)]
                 if vi_end:
                     vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(vi_end)]
+                if vi_start:
+                    vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(vi_start)]
+                if vi_end:
+                    vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(vi_end)]
 
                 if vi_plot.empty:
                     st.info("Sem dados de volume infiltrado apos aplicar os filtros.")
@@ -1280,6 +1296,10 @@ if subpage == "Operacional":
                     vi_acc["Data"] = pd.to_datetime(vi_acc["Data"], errors="coerce")
                     vi_acc["saida_key"] = vi_acc["saida_key"].astype(str).str.strip().str.upper()
                     vi_acc = vi_acc.dropna(subset=["Data", "saida_key"])
+                    if vi_start:
+                        vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(vi_start)]
+                    if vi_end:
+                        vi_acc = vi_acc[vi_acc["Data"] <= pd.to_datetime(vi_end)]
                     if vi_start:
                         vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(vi_start)]
                     if vi_end:
@@ -1389,6 +1409,7 @@ if subpage == "Operacional":
                         margin=dict(b=vi_bottom_margin, t=60, l=60, r=60),
                     )
                     fig_vi.update_xaxes(automargin=True)
+                    apply_graph_theme(fig_vi)
 
                     st.plotly_chart(fig_vi, use_container_width=True)
 
@@ -1499,11 +1520,11 @@ if subpage == "Operacional":
         return_insights=False,
         height=460,
     )
-    fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
-    if any(s.axis == "y2" for s in series):
+    fig.update_yaxes(title_text="Volume acumulado (m3)", secondary_y=False)
+    if any(s.axis == "y2" for s in acc_series):
         fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
 
-    
+    apply_graph_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
 elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
@@ -2201,7 +2222,7 @@ elif subpage == "Visualizacao aprofundada":
         fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
         fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-        
+        apply_graph_theme(fig2)
         st.plotly_chart(fig2, use_container_width=True)
     else:
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
@@ -2440,6 +2461,7 @@ elif subpage == "Visualizacao aprofundada":
         if any(s.axis == "y2" for s in series):
             fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
+        apply_graph_theme(fig2)
         st.plotly_chart(fig2, use_container_width=True)
 elif subpage == "In situ aprofundado":
     st.subheader("In situ aprofundado")
@@ -2453,6 +2475,7 @@ elif subpage == "In situ aprofundado":
                 break
 
     if file_obj is None:
+        st.info("Nao foi encontrado um arquivo de In situ para esta visualizacao.")
         st.info("Nao foi encontrado um arquivo de In situ para esta visualizacao.")
         st.stop()
 
@@ -2480,10 +2503,12 @@ elif subpage == "In situ aprofundado":
     date_max = df_long["DataHora"].max()
 
     ctrl_cols = st.columns([2, 2, 2], gap="small")
+    ctrl_cols = st.columns([2, 2, 2], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
     param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
     param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
     pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
+    default_pontos: list[str] = [pontos[0]] if pontos else []
     default_pontos: list[str] = [pontos[0]] if pontos else []
     pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
     aps_start, aps_end = period_selector("aps_insitu", date_min, date_max, default_preset="12 meses")
@@ -2491,6 +2516,10 @@ elif subpage == "In situ aprofundado":
     data_filt = df_long.copy()
     if pontos_sel:
         data_filt = data_filt[data_filt["poco_id"].isin(pontos_sel)]
+    if aps_start:
+        data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(aps_start)]
+    if aps_end:
+        data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(aps_end)]
     if aps_start:
         data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(aps_start)]
     if aps_end:
@@ -2569,7 +2598,7 @@ elif subpage == "In situ aprofundado":
     fig_ap.update_yaxes(title_text=param1, secondary_y=False)
     if any(s.axis == "y2" for s in series):
         fig_ap.update_yaxes(title_text=param2, secondary_y=True)
-    
+    apply_graph_theme(fig_ap)
     st.plotly_chart(fig_ap, use_container_width=True)
 
     with st.expander("Tabela detalhada", expanded=False):
@@ -2643,6 +2672,7 @@ elif subpage == "Laboratorial":
     sample_ids = sorted(df_lab["identificacao_amostra"].dropna().unique().tolist())
 
     lab_ctrl_cols = st.columns([1, 1], gap="small")
+    lab_ctrl_cols = st.columns([1, 1], gap="small")
     default_params = params[: min(6, len(params))]
     if "lab_selected_params" not in st.session_state:
         st.session_state["lab_selected_params"] = default_params
@@ -2679,6 +2709,10 @@ elif subpage == "Laboratorial":
         data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(lab_start)]
     if lab_end:
         data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(lab_end)]
+    if lab_start:
+        data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(lab_start)]
+    if lab_end:
+        data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(lab_end)]
 
     if data_filt.empty:
         st.info("Sem dados após os filtros selecionados.")
@@ -2699,7 +2733,8 @@ elif subpage == "Laboratorial":
         st.info("Nenhum resultado numérico disponível para os parâmetros selecionados.")
         st.stop()
 
-
+    current_theme = st.session_state.get("graph_theme", "light")
+    if current_theme == "dark":
         palette = [
             "#60a5fa",
             "#34d399",
@@ -2758,6 +2793,7 @@ elif subpage == "Laboratorial":
             font=dict(size=11),
         ),
     )
+    apply_graph_theme(fig_lab)
     st.plotly_chart(fig_lab, use_container_width=True)
 
     with st.expander("Tabela laboratorial", expanded=False):
@@ -2870,129 +2906,125 @@ elif subpage == "In situ":
         apply_graph_theme(fig3)
         st.plotly_chart(fig3, use_container_width=True)
 
-    else:
-        if "Ponto" in data_source.columns:
-            # Multiselect: cada parâmetro gera duas linhas (Entrada e Saída)
-            selected_params_list = st.multiselect(
-                "Parâmetros",
-                params,
-                default=[params[0]] if params else [],
-                key="is_geral_params_multi",
+    elif "Ponto" in data_source.columns:
+        selected_params_list = st.multiselect(
+            "Parâmetros",
+            params,
+            default=[params[0]] if params else [],
+            key="is_geral_params_multi",
+        )
+        is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+        if not selected_params_list:
+            st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
+            st.stop()
+
+        data = data_source.copy()
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
+        if is_start:
+            data = data[data["Data"] >= pd.to_datetime(is_start)]
+        if is_end:
+            data = data[data["Data"] <= pd.to_datetime(is_end)]
+
+        chart_frames = []
+        param_col_map: dict[str, list[str]] = {}
+        sep = " – "
+
+        for param in selected_params_list:
+            if param not in data.columns:
+                continue
+            pivot = (
+                data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
+                .sort_index()
             )
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+            pivot.columns = [f"{param}{sep}{col}" for col in pivot.columns]
+            param_col_map[param] = pivot.columns.tolist()
+            chart_frames.append(pivot)
 
-            if not selected_params_list:
-                st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
-                st.stop()
+        if not chart_frames:
+            st.info("Nao ha valores para os parâmetros selecionados.")
+            st.stop()
 
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
+        chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
+        param_colors = [
+            "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#17becf", "#bcbd22",
+        ]
 
-            chart_frames = []
-            param_col_map: dict[str, list[str]] = {}
-            _SEP = " – "
-
-            for param in selected_params_list:
-                if param not in data.columns:
-                    continue
-                pivot = (
-                    data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
-                    .sort_index()
-                )
-                pivot.columns = [f"{param}{_SEP}{col}" for col in pivot.columns]
-                param_col_map[param] = pivot.columns.tolist()
-                chart_frames.append(pivot)
-
-            if not chart_frames:
-                st.info("Nao ha valores para os parâmetros selecionados.")
-                st.stop()
-
-            chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
-
-            # Uma cor por parâmetro; linha sólida/círculo para Entrada, tracejada/quadrado para Saída
-            param_colors = [
-                "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
-                "#8c564b", "#e377c2", "#17becf", "#bcbd22",
-            ]
-
-            series = []
-            for p_idx, param in enumerate(selected_params_list):
-                color = param_colors[p_idx % len(param_colors)]
-                for col in param_col_map.get(param, []):
-                    ponto_part = col[len(param) + len(_SEP):]
-                    is_entrada = "entr" in ponto_part.lower()
-                    series.append(
-                        SeriesSpec(
-                            y=col,
-                            label=col,
-                            kind="line",
-                            marker="circle" if is_entrada else "square",
-                            line_dash="solid" if is_entrada else "dash",
-                            color=color,
-                            connect_gaps=True,
-                        )
+        series = []
+        for p_idx, param in enumerate(selected_params_list):
+            color = param_colors[p_idx % len(param_colors)]
+            for col in param_col_map.get(param, []):
+                ponto_part = col[len(param) + len(sep):]
+                is_entrada = "entr" in ponto_part.lower()
+                series.append(
+                    SeriesSpec(
+                        y=col,
+                        label=col,
+                        kind="line",
+                        marker="circle" if is_entrada else "square",
+                        line_dash="solid" if is_entrada else "dash",
+                        color=color,
+                        connect_gaps=True,
                     )
-
-            if not series:
-                st.info("Nenhuma série disponível para os parâmetros selecionados.")
-                st.stop()
-
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title="In situ – Entrada vs Saída",
-                show_range_slider=False,
-                limit_points=200000,
-            )
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-
-        else:
-            selected_param = st.selectbox("Parametro", params)
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
-
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
-
-            chart_df = (
-                data.groupby("Data", as_index=False)[selected_param]
-                .mean()
-                .sort_values("Data")
-            )
-            if chart_df.empty:
-                st.info("Nao ha valores para o parametro selecionado no In situ geral.")
-                st.stop()
-
-            series = [
-                SeriesSpec(
-                    y=selected_param,
-                    label=f"{selected_param} - In situ geral",
-                    kind="line",
-                    marker="circle",
-                    color="#8c564b",
-                    connect_gaps=True,
                 )
-            ]
 
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title=f"{selected_param} - In situ",
-                show_range_slider=False,
-                limit_points=200000,
+        if not series:
+            st.info("Nenhuma série disponível para os parâmetros selecionados.")
+            st.stop()
+
+        fig3, _ = build_time_chart_plotly(
+            chart_df,
+            x="Data",
+            series=series,
+            title="In situ – Entrada vs Saída",
+            show_range_slider=False,
+            limit_points=200000,
+        )
+        apply_graph_theme(fig3)
+        st.plotly_chart(fig3, use_container_width=True)
+
+    else:
+        selected_param = st.selectbox("Parametro", params)
+        is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+        data = data_source.copy()
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
+        if is_start:
+            data = data[data["Data"] >= pd.to_datetime(is_start)]
+        if is_end:
+            data = data[data["Data"] <= pd.to_datetime(is_end)]
+
+        chart_df = (
+            data.groupby("Data", as_index=False)[selected_param]
+            .mean()
+            .sort_values("Data")
+        )
+        if chart_df.empty:
+            st.info("Nao ha valores para o parametro selecionado no In situ geral.")
+            st.stop()
+
+        series = [
+            SeriesSpec(
+                y=selected_param,
+                label=f"{selected_param} - In situ geral",
+                kind="line",
+                marker="circle",
+                color="#8c564b",
+                connect_gaps=True,
             )
-            fig3.update_yaxes(title_text=selected_param, secondary_y=False)
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
+        ]
+
+        fig3, _ = build_time_chart_plotly(
+            chart_df,
+            x="Data",
+            series=series,
+            title=f"{selected_param} - In situ",
+            show_range_slider=False,
+            limit_points=200000,
+        )
+        fig3.update_yaxes(title_text=selected_param, secondary_y=False)
+        apply_graph_theme(fig3)
+        st.plotly_chart(fig3, use_container_width=True)
