@@ -1,6 +1,7 @@
 ﻿import re
 import unicodedata
 import io
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -11,93 +12,87 @@ from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
 
+def ensure_global_css_loaded() -> None:
+    if st.session_state.get("_global_css_loaded"):
+        return
+    css_path = Path(__file__).resolve().parents[1] / "style" / "style.css"
+    if css_path.exists():
+        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+        st.session_state["_global_css_loaded"] = True
+
+
+ensure_global_css_loaded()
+
+
 def apply_graph_theme(fig):
-    theme = st.session_state.get('graph_theme', 'light')
     if 'graph_theme' not in st.session_state:
         st.session_state['graph_theme'] = 'light'
+    theme = st.session_state['graph_theme']
     if theme == 'dark':
-        dark_layout = dict(
+        axis_style = dict(
+            gridcolor="#3f3f46",
+            zerolinecolor="#71717a",
+            linecolor="#e5e7eb",
+            tickfont=dict(color="#e5e7eb", size=13),
+            title_font=dict(color="#f8fafc", size=15),
+            showline=True,
+            showgrid=True,
+        )
+        fig.update_layout(
             template='plotly_dark',
             paper_bgcolor="#000000",
             plot_bgcolor="#000000",
             font_color="#e5e7eb",
             title_font=dict(color='#f8fafc', size=20, family='Segoe UI, Arial'),
-            xaxis=dict(
-                gridcolor="#000000",
-                zerolinecolor="#D1CECE",
-                linecolor="#919191",
-                tickfont=dict(color="#e5e7eb", size=13),
-                title_font=dict(color="#f1f5f9", size=15),
-                showline=True,
-                showgrid=True,
-            ),
-            yaxis=dict(
-                gridcolor="#BBBBBB",
-                zerolinecolor="#B9B9B9",
-                linecolor='#f8fafc',
-                tickfont=dict(color="#e5e7eb", size=13),
-                title_font=dict(color="#f1f5f9", size=15),
-                showline=True,
-                showgrid=True,
-            ),
             legend=dict(
                 bgcolor="rgba(2, 6, 23, 0.88)",
                 bordercolor='#334155',
                 font=dict(color='#f8fafc', size=13),
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='right',
-                x=1
             ),
             colorway=[
                 '#2563eb', '#16a34a', '#f59e42', '#e11d48', '#7c3aed',
                 '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
             ],
         )
-        fig.update_layout(**dark_layout)
     else:
-        light_layout = dict(
+        axis_style = dict(
+            gridcolor='#e5e7eb',
+            zerolinecolor='#e5e7eb',
+            linecolor="#334155",
+            tickfont=dict(color='#181c1f', size=13),
+            title_font=dict(color="#111827", size=15),
+            showline=True,
+            showgrid=True,
+        )
+        fig.update_layout(
             template='plotly_white',
             paper_bgcolor='#f8fafc',
             plot_bgcolor='#f8fafc',
             font_color="#000000",
             title_font=dict(color="#181a1b", size=20, family='Segoe UI, Arial'),
-            
-            xaxis=dict(
-                gridcolor='#e5e7eb',
-                zerolinecolor='#e5e7eb',
-                linecolor="#000000",
-                tickfont=dict(color='#181c1f', size=13),
-                title_font=dict(color="#0b0c0c", size=15),
-                showline=True,
-                showgrid=True,
-            ),
-            yaxis=dict(
-                gridcolor='#e5e7eb',
-                zerolinecolor='#e5e7eb',
-                linecolor="#4B4B4B",
-                tickfont=dict(color="#334155", size=12),
-                title_font=dict(color="#334155", size=13),
-                showline=True,
-                showgrid=True,
-            ),
             legend=dict(
                 bgcolor='rgba(255, 255, 255, 0.92)',
                 bordercolor='#cbd5e1',
                 font=dict(color="#111827", size=13),
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='right',
-                x=1
             ),
             colorway=[
                 '#2563eb', "#003b16", '#f59e42', '#e11d48', "#2f0675",
                 "#4597bd", '#facc15', '#f472b6', '#a3e635', '#f87171',
             ],
         )
-        fig.update_layout(**light_layout)
+    fig.update_xaxes(**axis_style)
+    fig.update_yaxes(**axis_style)
+    fig.update_layout(
+        yaxis2=dict(
+            gridcolor=axis_style["gridcolor"],
+            zerolinecolor=axis_style["zerolinecolor"],
+            linecolor=axis_style["linecolor"],
+            tickfont=axis_style["tickfont"],
+            title=dict(font=axis_style["title_font"]),
+            showline=axis_style["showline"],
+            showgrid=axis_style["showgrid"],
+        )
+    )
     return fig
 
 
@@ -1226,6 +1221,7 @@ if subpage == "Operacional":
         margin=dict(b=bottom_margin, t=60, l=60, r=60),
     )
     fig.update_xaxes(automargin=True)
+    apply_graph_theme(fig)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1390,6 +1386,7 @@ if subpage == "Operacional":
                         margin=dict(b=vi_bottom_margin, t=60, l=60, r=60),
                     )
                     fig_vi.update_xaxes(automargin=True)
+                    apply_graph_theme(fig_vi)
 
                     st.plotly_chart(fig_vi, use_container_width=True)
 
@@ -1500,11 +1497,11 @@ if subpage == "Operacional":
         return_insights=False,
         height=460,
     )
-    fig.update_yaxes(title_text="NA medio (m)", secondary_y=False)
-    if any(s.axis == "y2" for s in series):
+    fig.update_yaxes(title_text="Volume acumulado (m3)", secondary_y=False)
+    if any(s.axis == "y2" for s in acc_series):
         fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
 
-    
+    apply_graph_theme(fig)
     st.plotly_chart(fig, use_container_width=True)
 elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
@@ -2202,7 +2199,7 @@ elif subpage == "Visualizacao aprofundada":
         fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
         fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-        
+        apply_graph_theme(fig2)
         st.plotly_chart(fig2, use_container_width=True)
     else:
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
@@ -2441,6 +2438,7 @@ elif subpage == "Visualizacao aprofundada":
         if any(s.axis == "y2" for s in series):
             fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
+        apply_graph_theme(fig2)
         st.plotly_chart(fig2, use_container_width=True)
 elif subpage == "In situ aprofundado":
     st.subheader("In situ aprofundado")
@@ -2570,7 +2568,7 @@ elif subpage == "In situ aprofundado":
     fig_ap.update_yaxes(title_text=param1, secondary_y=False)
     if any(s.axis == "y2" for s in series):
         fig_ap.update_yaxes(title_text=param2, secondary_y=True)
-    
+    apply_graph_theme(fig_ap)
     st.plotly_chart(fig_ap, use_container_width=True)
 
     with st.expander("Tabela detalhada", expanded=False):
@@ -2700,7 +2698,8 @@ elif subpage == "Laboratorial":
         st.info("Nenhum resultado numérico disponível para os parâmetros selecionados.")
         st.stop()
 
-
+    current_theme = st.session_state.get("graph_theme", "light")
+    if current_theme == "dark":
         palette = [
             "#60a5fa",
             "#34d399",
@@ -2759,6 +2758,7 @@ elif subpage == "Laboratorial":
             font=dict(size=11),
         ),
     )
+    apply_graph_theme(fig_lab)
     st.plotly_chart(fig_lab, use_container_width=True)
 
     with st.expander("Tabela laboratorial", expanded=False):
