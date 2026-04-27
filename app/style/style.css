@@ -114,17 +114,17 @@ section[data-testid="stSidebar"] h3 {
 /* ================= BOTÕES ================= */
 .stButton > button {
     border-radius: 10px;
-    font-weight: 600;
+    font-weight: 500;
     padding: 0.6rem 1rem;
     border: none;
-    background: linear-gradient(135deg, #004d44, #b7c0dd);
+    background:  #004d44;
     color: white;
     transition: all 0.2s ease;
 }
 
 .stButton > button:hover {
     transform: translateY(-1px);
-    background: linear-gradient(135deg, #004d44, #b7c0dd);
+    background:  #004d44;
     box-shadow: 0 6px 18px rgba(0, 77, 68, 0.25);
 }
 
