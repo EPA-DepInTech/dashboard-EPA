@@ -76,6 +76,84 @@ html, body, [class*="css"] {
     cursor: pointer;
 }
 
+/* ================= RESET / BASE ================= */
+:root {
+    --page-bg: #000000;
+    --card-bg: #ffffff;
+    --text-color: #000000;
+}
+
+html, body, [class*="css"] {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    color: var(--text-color);
+}
+
+/* ================= LAYOUT GERAL ================= */
+.st-emotion-cache-4rsbii {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: auto;
+    align-items: center;
+    height: 100dvh;
+    background: var(--page-bg);
+}
+
+/* ================= HEADER / TOPBAR ================= */
+.st-emotion-cache-1s6ol36 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    height: 3.75rem;
+    min-height: 3.75rem;
+    width: 100%;
+    background: #000000;
+    z-index: 999990;
+    font-size: 0.875rem;
+}
+
+.st-emotion-cache-14vh5up {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0;
+    position: relative;
+    z-index: 999990;
+}
+
+.st-emotion-cache-1wxyy64 {
+    height: 40px;
+    margin: 0.25rem 0;
+    object-fit: contain;
+    object-position: left center;
+    max-width: 100%;
+    z-index: 999990;
+}
+
+/* ================= CONTAINER PRINCIPAL ================= */
+.st-emotion-cache-zy6yx3 {
+    width: 100%;
+    padding: 1rem 1rem 10rem;
+    max-width: initial;
+    background: var(--page-bg);
+}
+
+.st-emotion-cache-1k9kca4 {
+    display: flex;
+    gap: 1rem;
+    -webkit-box-align: center;
+    align-items: center;
+    padding: 1rem;
+    background-color: #004d44;
+    border-radius: 0.5rem;
+    height: 4.25rem;
+    cursor: pointer;
+}
+
 /* ================= SPLASH SCREEN ================= */
 .splash-container {
     position: fixed;
