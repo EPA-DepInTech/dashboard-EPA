@@ -102,25 +102,26 @@ def apply_graph_theme(fig):
     return fig
 
 
-def render_graph_theme_toggle() -> None:
+def render_graph_theme_toggle(key_suffix: str = "default") -> None:
     if "graph_theme" not in st.session_state:
         st.session_state["graph_theme"] = "light"
     current_theme = st.session_state["graph_theme"]
     if current_theme == "light":
         next_theme = "dark"
-        button_label = "Light Mode"
-        button_icon = ":material/light_mode:"
-    else:
-        next_theme = "light"
         button_label = "Dark Mode"
         button_icon = ":material/dark_mode:"
+    else:
+        next_theme = "light"
+        button_label = "Light Mode"
+        button_icon = ":material/light_mode:"
     if st.button(
         button_label,
         icon=button_icon,
         use_container_width=True,
-        key="global_graph_theme_toggle",
+        key=f"global_graph_theme_toggle_{key_suffix}",
     ):
         st.session_state["graph_theme"] = next_theme
+        st.rerun()
 
 
 def render_graph_theme_header_toggle() -> None:
@@ -190,7 +191,7 @@ def render_graph_theme_header_toggle() -> None:
         unsafe_allow_html=True,
     )
     with st.container(key="graph_theme_header_toggle"):
-        render_graph_theme_toggle()
+        render_graph_theme_toggle("header")
 
 
 def render_create_graph_tabs(options: list[str]) -> str:
@@ -1055,52 +1056,8 @@ if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"
         """,
         unsafe_allow_html=True,
     )
-    render_graph_theme_header_toggle()
-else:
-    theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
-    with theme_col:
-        render_graph_theme_toggle()
 
-if subpage == "Operacional":
-    st.subheader("Volume bombeado por poço")
-
-    vb_plot = vb[["Data", "poco_key", "bombeado_vol"]].copy()
-    vb_plot["Data"] = pd.to_datetime(vb_plot["Data"], errors="coerce")
-    vb_plot["poco_key"] = vb_plot["poco_key"].astype(str).str.strip().str.upper()
-    vb_plot = vb_plot.dropna(subset=["Data", "poco_key"])
-
-    if vb_plot.empty:
-        st.info("Nao ha dados de volume bombeado para exibir.")
-        st.stop()
-
-    non_acc_points = sorted([p for p in vb_plot["poco_key"].unique().tolist() if _norm_text(p) != "acumulado"])
-    if not non_acc_points:
-        st.info("Nao ha pocos de bombeamento para exibir.")
-        st.stop()
-
-    min_date = vb_plot["Data"].min()
-    max_date = vb_plot["Data"].max()
-    default_range = None
-    if pd.notna(min_date) and pd.notna(max_date):
-        start_default = max(min_date, max_date - pd.DateOffset(months=1))
-        default_range = (start_default.date(), max_date.date())
-
-    ctrl_cols = st.columns([2.4, 1.6], gap="small")
-    default_points = non_acc_points if len(non_acc_points) <= 12 else non_acc_points[:12]
-    selected_points = ctrl_cols[0].multiselect(
-        "Pocos",
-        non_acc_points,
-        default=default_points,
-        key="avg_vb_points",
-    )
-    selected_period = ctrl_cols[1].date_input(
-        "Periodo",
-        value=default_range,
-        format="DD/MM/YYYY",
-        key="avg_vb_period",
-    )
-
-render_graph_theme_toggle()
+render_graph_theme_header_toggle()
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
