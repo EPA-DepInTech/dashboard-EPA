@@ -4,7 +4,11 @@ import streamlit as st
 import pandas as pd
 
 from core.state import get_uploaded_file, set_uploaded_file
+from core.theme import apply_global_theme_styles, apply_plotly_theme, ensure_theme_state
 from services.dataset_service import build_dataset_from_excels
+
+ensure_theme_state()
+apply_global_theme_styles()
 
 # ================== TÍTULO ==================
 st.title("📊 Dashboard de Amostras")
@@ -164,6 +168,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
                 tickfont=dict(color="#000"),
                 title_font=dict(color="#000"),
             )
+            apply_plotly_theme(fig_month)
             st.plotly_chart(fig_month, use_container_width=True)
 
     with right:
@@ -187,6 +192,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
+        apply_plotly_theme(fig_dry)
         st.plotly_chart(fig_dry, use_container_width=True)
 
         if not type_counts.empty:
@@ -207,6 +213,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
+            apply_plotly_theme(fig_types)
             st.plotly_chart(fig_types, use_container_width=True)
 
         st.info("Gráficos adicionais carregados após processamento.")
@@ -238,3 +245,4 @@ if isinstance(df_dict, dict):
             st.switch_page("pages/create_graph_operacional.py")
         except Exception:
             st.error("Erro ao abrir página de gráficos.")
+

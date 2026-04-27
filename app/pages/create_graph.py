@@ -8,6 +8,7 @@ import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
 from components.period_selector import period_selector
+from core.theme import apply_global_theme_styles, ensure_theme_state
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
@@ -22,6 +23,8 @@ def ensure_global_css_loaded() -> None:
 
 
 ensure_global_css_loaded()
+ensure_theme_state()
+apply_global_theme_styles()
 
 
 def apply_graph_theme(fig):
@@ -102,11 +105,11 @@ def render_graph_theme_toggle(key_suffix: str = "default") -> None:
     current_theme = st.session_state["graph_theme"]
     if current_theme == "light":
         next_theme = "dark"
-        button_label = "Dark Mode"
+        button_label = "Modo Escuro"
         button_icon = ":material/dark_mode:"
     else:
         next_theme = "light"
-        button_label = "Light Mode"
+        button_label = "Modo Claro"
         button_icon = ":material/light_mode:"
     if st.button(
         button_label,
@@ -198,8 +201,8 @@ def render_create_graph_tabs(options: list[str]) -> str:
                 z-index: 999989;
                 margin: -5.95rem 10.75rem 0.85rem -1rem;
                 padding: 0.15rem 0 0;
-                background: #000000;
-                border-bottom: 1px solid #0f766e;
+                background: var(--global-page-bg, #000000);
+                border-bottom: 1px solid var(--global-accent-border, #0f766e);
             }
 
             .st-key-create_graph_header_bar > div[data-testid="stHorizontalBlock"] {
@@ -236,32 +239,32 @@ def render_create_graph_tabs(options: list[str]) -> str:
             }
 
             .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label {
-                background: #00352f;
-                border: 1px solid #0f766e;
+                background: var(--global-accent, #00352f);
+                border: 1px solid var(--global-accent-border, #0f766e);
                 border-bottom: none;
                 border-radius: 8px 8px 0 0;
-                color: #e5e7eb;
+                color: #ffffff;
                 min-height: 2.5rem;
                 padding: 0.55rem 1rem;
             }
 
             .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:hover {
-                background: #004d44;
+                background: var(--global-accent-hover, #004d44);
                 color: #ffffff;
             }
 
             .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) {
-                background: #b7c0dd;
-                border-color: #b7c0dd;
-                box-shadow: 0 -2px 10px rgba(183, 192, 221, 0.18);
-                color: #001f1c !important;
+                background: var(--global-surface, #b7c0dd);
+                border-color: var(--global-border, #b7c0dd);
+                box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.18);
+                color: var(--global-text, #001f1c) !important;
                 font-weight: 700;
                 position: relative;
                 top: 1px;
             }
 
             .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) p {
-                color: #001f1c !important;
+                color: var(--global-text, #001f1c) !important;
                 font-weight: 700;
             }
 
@@ -1057,11 +1060,6 @@ if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"
         """,
         unsafe_allow_html=True,
     )
-    render_graph_theme_header_toggle()
-else:
-    theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
-    with theme_col:
-        render_graph_theme_toggle()
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
