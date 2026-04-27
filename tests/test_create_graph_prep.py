@@ -1,115 +1,47 @@
-import importlib
 import os
 import random
 import sys
+import types
+from pathlib import Path
 
 import pandas as pd
 
 os.environ["EPA_TESTING"] = "1"
-APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
-if "streamlit" not in sys.modules:
-    class _DummySidebar:
-        def __enter__(self):
-            return self
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+ROOT_DIR = Path(__file__).resolve().parents[1]
+APP_DIR = ROOT_DIR / "app"
 
-        def subheader(self, *args, **kwargs):
-            return None
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
-        def radio(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
 
-    class _DummyColumn:
-        def __enter__(self):
-            return self
+def _load_create_graph_helpers():
+    """
+    Carrega somente a parte utilitária de app/pages/create_graph.py,
+    evitando executar a página Streamlit no topo do módulo.
+    """
+    module_path = APP_DIR / "pages" / "create_graph.py"
+    source = module_path.read_text(encoding="utf-8-sig")
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+    split_token = '\ndf_dict = st.session_state.get("df_dict")'
+    if split_token not in source:
+        raise RuntimeError(
+            "Não encontrei o ponto de corte esperado em create_graph.py. "
+            "Revise o carregamento do módulo de teste."
+        )
 
-        def button(self, *args, **kwargs):
-            return False
+    helper_source = source.split(split_token, 1)[0]
 
-        def selectbox(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
+    module = types.ModuleType("create_graph_helpers")
+    module.__file__ = str(module_path)
+    module.__package__ = "app.pages"
 
-        def multiselect(self, *args, **kwargs):
-            default = kwargs.get("default", [])
-            return default if default else []
+    exec(helper_source, module.__dict__)
+    return module
 
-        def date_input(self, *args, **kwargs):
-            return kwargs.get("value")
-
-        def radio(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-    class _DummyStreamlit:
-        def __init__(self):
-            self.session_state = {}
-            self.sidebar = _DummySidebar() 
-
-        def title(self, *args, **kwargs):
-            return None
-
-        def info(self, *args, **kwargs):
-            return None
-
-        def stop(self, *args, **kwargs):
-            return None
-
-        def error(self, *args, **kwargs):
-            return None
-
-        def warning(self, *args, **kwargs):
-            return None
-
-        def subheader(self, *args, **kwargs):
-            return None
-        
-        def markdown(self, *args, **kwargs):
-            return None
-
-        def radio(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-        def checkbox(self, *args, **kwargs):
-            return kwargs.get("value", False)
-
-        def selectbox(self, *args, **kwargs):
-            options = args[1] if len(args) > 1 else kwargs.get("options", [])
-            return options[0] if options else None
-
-        def multiselect(self, *args, **kwargs):
-            default = kwargs.get("default", [])
-            return default if default else []
-
-        def button(self, *args, **kwargs):
-            return False
-
-        def date_input(self, *args, **kwargs):
-            return kwargs.get("value")
-
-        def plotly_chart(self, *args, **kwargs):
-            return None
-
-        def columns(self, *args, **kwargs):
-            spec = args[0] if args else kwargs.get("spec", 1)
-            if isinstance(spec, int):
-                n = spec
-            else:
-                n = len(spec)
-            return [_DummyColumn() for _ in range(n)]
-
-    sys.modules["streamlit"] = _DummyStreamlit()
-from app.pages import create_graph as cg  # noqa: E402
-importlib.reload(cg)
+cg = _load_create_graph_helpers()
 
 
 def _rand_series(seed: int, n: int) -> list[float]:
