@@ -52,7 +52,7 @@ if "streamlit" not in sys.modules:
     class _DummyStreamlit:
         def __init__(self):
             self.session_state = {}
-            self.sidebar = _DummySidebar() 
+            self.sidebar = _DummySidebar()
 
         def title(self, *args, **kwargs):
             return None
@@ -78,6 +78,11 @@ if "streamlit" not in sys.modules:
         def radio(self, *args, **kwargs):
             options = args[1] if len(args) > 1 else kwargs.get("options", [])
             return options[0] if options else None
+
+        def pills(self, *args, **kwargs):
+            options = args[1] if len(args) > 1 else kwargs.get("options", [])
+            default = kwargs.get("default")
+            return default if default is not None else (options[0] if options else None)
 
         def checkbox(self, *args, **kwargs):
             return kwargs.get("value", False)
