@@ -76,6 +76,84 @@ html, body, [class*="css"] {
     cursor: pointer;
 }
 
+/* ================= RESET / BASE ================= */
+:root {
+    --page-bg: #000000;
+    --card-bg: #ffffff;
+    --text-color: #000000;
+}
+
+html, body, [class*="css"] {
+    font-family: "Inter", "Segoe UI", sans-serif;
+    color: var(--text-color);
+}
+
+/* ================= LAYOUT GERAL ================= */
+.st-emotion-cache-4rsbii {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: auto;
+    align-items: center;
+    height: 100dvh;
+    background: var(--page-bg);
+}
+
+/* ================= HEADER / TOPBAR ================= */
+.st-emotion-cache-1s6ol36 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    height: 3.75rem;
+    min-height: 3.75rem;
+    width: 100%;
+    background: #000000;
+    z-index: 999990;
+    font-size: 0.875rem;
+}
+
+.st-emotion-cache-14vh5up {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0;
+    position: relative;
+    z-index: 999990;
+}
+
+.st-emotion-cache-1wxyy64 {
+    height: 40px;
+    margin: 0.25rem 0;
+    object-fit: contain;
+    object-position: left center;
+    max-width: 100%;
+    z-index: 999990;
+}
+
+/* ================= CONTAINER PRINCIPAL ================= */
+.st-emotion-cache-zy6yx3 {
+    width: 100%;
+    padding: 1rem 1rem 10rem;
+    max-width: initial;
+    background: var(--page-bg);
+}
+
+.st-emotion-cache-1k9kca4 {
+    display: flex;
+    gap: 1rem;
+    -webkit-box-align: center;
+    align-items: center;
+    padding: 1rem;
+    background-color: #004d44;
+    border-radius: 0.5rem;
+    height: 4.25rem;
+    cursor: pointer;
+}
+
 /* ================= SPLASH SCREEN ================= */
 .splash-container {
     position: fixed;
@@ -162,6 +240,69 @@ section[data-testid="stSidebar"] h3 {
     padding: 10px;
 }
 
+/* ================= CAMPOS DE SELEÇÃO ================= */
+[data-testid="stSelectbox"] label,
+[data-testid="stMultiSelect"] label,
+[data-testid="stDateInput"] label,
+[data-testid="stPills"] label {
+    color: #f8fafc !important;
+    font-weight: 700 !important;
+}
+
+[data-baseweb="select"] > div,
+[data-baseweb="popover"] [data-baseweb="menu"] {
+    background: #101820 !important;
+    border: 1px solid #334155 !important;
+    border-radius: 10px !important;
+    color: #f8fafc !important;
+    box-shadow: none !important;
+}
+
+[data-baseweb="select"] > div:hover {
+    border-color: #0f766e !important;
+}
+
+[data-baseweb="select"] > div:focus-within {
+    border-color: #b7c0dd !important;
+    box-shadow: 0 0 0 1px #b7c0dd !important;
+}
+
+[data-baseweb="select"] input,
+[data-baseweb="select"] span,
+[data-baseweb="select"] svg {
+    color: #f8fafc !important;
+    fill: #f8fafc !important;
+}
+
+[data-baseweb="select"] [data-baseweb="tag"] {
+    background: #004d44 !important;
+    border: 1px solid #0f766e !important;
+    border-radius: 7px !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+
+[data-baseweb="select"] [data-baseweb="tag"]:hover {
+    background: #006b5c !important;
+}
+
+[data-baseweb="select"] [data-baseweb="tag"] span,
+[data-baseweb="select"] [data-baseweb="tag"] svg {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+
+[data-baseweb="popover"] [role="option"] {
+    background: #101820 !important;
+    color: #f8fafc !important;
+}
+
+[data-baseweb="popover"] [role="option"]:hover,
+[data-baseweb="popover"] [aria-selected="true"] {
+    background: #004d44 !important;
+    color: #ffffff !important;
+}
+
 /* ================= ALERTAS ================= */
 .stAlert {
     border-radius: 12px;
@@ -170,40 +311,49 @@ section[data-testid="stSidebar"] h3 {
 /* ================= SELETOR DE PERÍODO ================= */
 
 /* Pill não selecionado */
-[data-testid="stPillsButton"] {
+[data-testid="stPills"] button,
+[data-testid="stPillsButton"],
+[data-testid="stBaseButton-pills"] {
     border-radius: 20px !important;
-    font-size: 0.8rem !important;
-    font-weight: 500 !important;
-    padding: 0.25rem 0.8rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    padding: 0.45rem 1rem !important;
     transition: all 0.18s ease !important;
-    border: 1.5px solid #cbd5e1 !important;
-    background: #f8fafc !important;
-    color: #334155 !important;
+    border: 1.5px solid #334155 !important;
+    background: #101820 !important;
+    color: #f8fafc !important;
+    box-shadow: none !important;
 }
 
 /* Pill não selecionado — hover */
-[data-testid="stPillsButton"]:not([aria-pressed="true"]):hover {
-    border-color: #004d44 !important;
-    color: #004d44 !important;
-    background: rgba(0, 77, 68, 0.06) !important;
+[data-testid="stPills"] button:not([aria-pressed="true"]):not([aria-selected="true"]):hover,
+[data-testid="stPillsButton"]:not([aria-pressed="true"]):hover,
+[data-testid="stBaseButton-pills"]:not([aria-pressed="true"]):not([aria-selected="true"]):hover {
+    border-color: #0f766e !important;
+    color: #ffffff !important;
+    background: #00352f !important;
     box-shadow: 0 2px 8px rgba(0, 77, 68, 0.12) !important;
 }
 
 /* Pill selecionado */
-[data-testid="stPillsButton"][aria-pressed="true"] {
-    background: linear-gradient(135deg, #004d44, #006b5c) !important;
-    border-color: #004d44 !important;
+[data-testid="stPills"] button[aria-pressed="true"],
+[data-testid="stPills"] button[aria-selected="true"],
+[data-testid="stPillsButton"][aria-pressed="true"],
+[data-testid="stBaseButton-pillsActive"] {
+    background: #004d44 !important;
+    border-color: #0f766e !important;
     color: #ffffff !important;
     box-shadow: 0 3px 10px rgba(0, 77, 68, 0.28) !important;
 }
 
 /* Label "Período" acima dos pills */
+[data-testid="stPills"] label,
 [data-testid="stPillsLabel"] {
-    font-size: 0.75rem !important;
-    font-weight: 600 !important;
-    color: #64748b !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.04em !important;
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    color: #f8fafc !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
     margin-bottom: 0.25rem !important;
 }
 
