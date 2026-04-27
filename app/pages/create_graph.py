@@ -6,8 +6,300 @@ import pandas as pd
 import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
+from components.period_selector import period_selector
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
+
+
+def apply_graph_theme(fig):
+    theme = st.session_state.get('graph_theme', 'light')
+    if 'graph_theme' not in st.session_state:
+        st.session_state['graph_theme'] = 'light'
+    if theme == 'dark':
+        dark_layout = dict(
+            template='plotly_dark',
+            paper_bgcolor="#000000",
+            plot_bgcolor="#000000",
+            font_color="#e5e7eb",
+            title_font=dict(color='#f8fafc', size=20, family='Segoe UI, Arial'),
+            xaxis=dict(
+                gridcolor="#000000",
+                zerolinecolor="#D1CECE",
+                linecolor="#919191",
+                tickfont=dict(color="#e5e7eb", size=13),
+                title_font=dict(color="#f1f5f9", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            yaxis=dict(
+                gridcolor="#BBBBBB",
+                zerolinecolor="#B9B9B9",
+                linecolor='#f8fafc',
+                tickfont=dict(color="#e5e7eb", size=13),
+                title_font=dict(color="#f1f5f9", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            legend=dict(
+                bgcolor="rgba(2, 6, 23, 0.88)",
+                bordercolor='#334155',
+                font=dict(color='#f8fafc', size=13),
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            ),
+            colorway=[
+                '#2563eb', '#16a34a', '#f59e42', '#e11d48', '#7c3aed',
+                '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
+            ],
+        )
+        fig.update_layout(**dark_layout)
+    else:
+        light_layout = dict(
+            template='plotly_white',
+            paper_bgcolor='#f8fafc',
+            plot_bgcolor='#f8fafc',
+            font_color="#000000",
+            title_font=dict(color="#181a1b", size=20, family='Segoe UI, Arial'),
+            
+            xaxis=dict(
+                gridcolor='#e5e7eb',
+                zerolinecolor='#e5e7eb',
+                linecolor="#000000",
+                tickfont=dict(color='#181c1f', size=13),
+                title_font=dict(color="#0b0c0c", size=15),
+                showline=True,
+                showgrid=True,
+            ),
+            yaxis=dict(
+                gridcolor='#e5e7eb',
+                zerolinecolor='#e5e7eb',
+                linecolor="#4B4B4B",
+                tickfont=dict(color="#334155", size=12),
+                title_font=dict(color="#334155", size=13),
+                showline=True,
+                showgrid=True,
+            ),
+            legend=dict(
+                bgcolor='rgba(255, 255, 255, 0.92)',
+                bordercolor='#cbd5e1',
+                font=dict(color="#111827", size=13),
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            ),
+            colorway=[
+                '#2563eb', "#003b16", '#f59e42', '#e11d48', "#2f0675",
+                "#4597bd", '#facc15', '#f472b6', '#a3e635', '#f87171',
+            ],
+        )
+        fig.update_layout(**light_layout)
+    return fig
+
+
+def render_graph_theme_toggle() -> None:
+    if "graph_theme" not in st.session_state:
+        st.session_state["graph_theme"] = "light"
+    current_theme = st.session_state["graph_theme"]
+    if current_theme == "light":
+        next_theme = "dark"
+        button_label = "Light Mode"
+        button_icon = ":material/light_mode:"
+    else:
+        next_theme = "light"
+        button_label = "Dark Mode"
+        button_icon = ":material/dark_mode:"
+    if st.button(
+        button_label,
+        icon=button_icon,
+        use_container_width=True,
+        key="global_graph_theme_toggle",
+    ):
+        st.session_state["graph_theme"] = next_theme
+
+
+def render_graph_theme_header_toggle() -> None:
+    st.markdown(
+        """
+        <style>
+            .st-key-graph_theme_header_toggle {
+                position: fixed;
+                top: 0.3rem;
+                right: 3.75rem;
+                z-index: 999992;
+                width: auto;
+                max-width: max-content;
+                margin: 0;
+                padding: 0;
+                overflow: visible;
+                writing-mode: horizontal-tb;
+            }
+
+            .st-key-graph_theme_header_toggle > div {
+                width: auto !important;
+                max-width: max-content;
+            }
+
+            .st-key-graph_theme_header_toggle div[data-testid="stVerticalBlock"] {
+                gap: 0;
+                width: auto !important;
+                max-width: max-content;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton {
+                margin: 0;
+                width: auto;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button {
+                width: auto;
+                min-height: 2.5rem;
+                padding: 0.45rem 0.9rem;
+                border-radius: 14px;
+                border: 1px solid #0f766e;
+                background: #00352f;
+                color: #e5e7eb;
+                box-shadow: none;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button:hover {
+                background: #004d44;
+                color: #ffffff;
+                transform: none;
+                box-shadow: none;
+            }
+
+            .st-key-graph_theme_header_toggle .stButton > button span[data-testid="stIconMaterial"] {
+                font-size: 1rem;
+            }
+
+            @media (max-width: 1100px) {
+                .st-key-graph_theme_header_toggle {
+                    right: 3.25rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.container(key="graph_theme_header_toggle"):
+        render_graph_theme_toggle()
+
+
+def render_create_graph_tabs(options: list[str]) -> str:
+    st.markdown(
+        """
+        <style>
+            .st-key-create_graph_header_bar {
+                position: sticky;
+                top: 0;
+                z-index: 999989;
+                margin: -5.95rem 10.75rem 0.85rem -1rem;
+                padding: 0.15rem 0 0;
+                background: #000000;
+                border-bottom: 1px solid #0f766e;
+            }
+
+            .st-key-create_graph_header_bar > div[data-testid="stHorizontalBlock"] {
+                align-items: end;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > label {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] {
+                margin: 0;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div {
+                overflow-x: auto;
+                overflow-y: hidden;
+                scrollbar-width: none;
+            }
+
+            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div::-webkit-scrollbar {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] {
+                align-items: flex-end;
+                background: transparent;
+                display: flex;
+                flex-wrap: nowrap;
+                gap: 0.25rem;
+                margin: 0;
+                min-width: max-content;
+                padding: 0.2rem 0 0;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label {
+                background: #00352f;
+                border: 1px solid #0f766e;
+                border-bottom: none;
+                border-radius: 8px 8px 0 0;
+                color: #e5e7eb;
+                min-height: 2.5rem;
+                padding: 0.55rem 1rem;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:hover {
+                background: #004d44;
+                color: #ffffff;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) {
+                background: #b7c0dd;
+                border-color: #b7c0dd;
+                box-shadow: 0 -2px 10px rgba(183, 192, 221, 0.18);
+                color: #001f1c !important;
+                font-weight: 700;
+                position: relative;
+                top: 1px;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) p {
+                color: #001f1c !important;
+                font-weight: 700;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label > div:first-child {
+                display: none;
+            }
+
+            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] p {
+                font-size: 0.92rem;
+                margin: 0;
+                white-space: nowrap;
+            }
+
+            .st-key-create_graph_header_bar .stButton > button {
+                min-height: 2.65rem;
+                margin-bottom: 0.15rem;
+            }
+
+            @media (max-width: 1100px) {
+                .st-key-create_graph_header_bar {
+                    margin: -5.65rem 8.75rem 0.85rem -1rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    return st.radio(
+        "Visualizacao",
+        options,
+        index=0,
+        horizontal=True,
+        key="create_graph_subpage",
+    )
 
 
 def _norm_key(value: object) -> str:
@@ -667,15 +959,13 @@ def _copy_keys(src: dict, keys: list[str], dest: dict):
 if isinstance(df_by_file, dict) and df_by_file:
     na_candidates = [f for f, d in df_by_file.items() if d and any(k in d for k in ("NA Semanal", "Volume Bombeado", "Volume Infiltrado"))]
     insitu_candidates = [f for f, d in df_by_file.items()]
-    with st.sidebar:
-        st.subheader("Arquivos fonte")
-        if na_candidates:
-            selected_na_file = st.selectbox("Arquivo para NA/Volume", na_candidates, index=0, key="sel_na_file")
-        if insitu_candidates:
-            default_insitu_idx = 0
-            if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
-                default_insitu_idx = 1
-            selected_insitu_file = st.selectbox("Arquivo para In situ", insitu_candidates, index=default_insitu_idx, key="sel_insitu_file")
+    if na_candidates:
+        selected_na_file = na_candidates[0]
+    if insitu_candidates:
+        default_insitu_idx = 0
+        if selected_na_file in insitu_candidates and len(insitu_candidates) > 1:
+            default_insitu_idx = 1
+        selected_insitu_file = insitu_candidates[default_insitu_idx]
 
     if selected_na_file or selected_insitu_file:
         combined: dict[str, pd.DataFrame] = {}
@@ -734,16 +1024,41 @@ if in_situ_pontos is not None or in_situ_geral is not None:
 subpage_options.append("In situ aprofundado")
 subpage_options.append("Laboratorial")
 
-with st.sidebar:
-    st.subheader("Abas")
-    subpage = st.radio(
-        "Selecionar grafico",
-        subpage_options,
-        index=0,
-        horizontal=False,
+subpage = st.session_state.get("create_graph_subpage", "Operacional")
+if subpage not in subpage_options:
+    subpage = "Operacional"
+st.session_state["create_graph_subpage"] = subpage
+
+if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"):
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"] {
+                display: none;
+            }
+
+            button[kind="header"],
+            [data-testid="collapsedControl"] {
+                display: none;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] > div:first-child {
+                padding-top: 0.75rem !important;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] .stSubheader {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-
-
+    render_graph_theme_header_toggle()
+else:
+    theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
+    with theme_col:
+        render_graph_theme_toggle()
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
@@ -764,37 +1079,25 @@ if subpage == "Operacional":
 
     min_date = vb_plot["Data"].min()
     max_date = vb_plot["Data"].max()
-    default_range = None
-    if pd.notna(min_date) and pd.notna(max_date):
-        start_default = max(min_date, max_date - pd.DateOffset(months=1))
-        default_range = (start_default.date(), max_date.date())
 
-    ctrl_cols = st.columns([2.4, 1.6], gap="small")
     default_points = non_acc_points if len(non_acc_points) <= 12 else non_acc_points[:12]
-    selected_points = ctrl_cols[0].multiselect(
-        "Pocos",
+    selected_points = st.multiselect(
+        "Poços",
         non_acc_points,
         default=default_points,
         key="avg_vb_points",
     )
-    selected_period = ctrl_cols[1].date_input(
-        "Periodo",
-        value=default_range,
-        format="DD/MM/YYYY",
-        key="avg_vb_period",
-    )
+    vb_start, vb_end = period_selector("avg_vb", min_date, max_date, default_preset="1 mês")
 
     if not selected_points:
         st.info("Selecione ao menos um poco para exibir o grafico.")
         st.stop()
 
     vb_plot = vb_plot[vb_plot["poco_key"].isin(selected_points)].copy()
-    if isinstance(selected_period, (list, tuple)) and len(selected_period) == 2:
-        start, end = selected_period
-        if start:
-            vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(start)]
-        if end:
-            vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(end)]
+    if vb_start:
+        vb_plot = vb_plot[vb_plot["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_plot = vb_plot[vb_plot["Data"] <= pd.to_datetime(vb_end)]
 
     if vb_plot.empty:
         st.info("Sem dados de volume bombeado apos aplicar os filtros.")
@@ -814,12 +1117,10 @@ if subpage == "Operacional":
     vb_acc["Data"] = pd.to_datetime(vb_acc["Data"], errors="coerce")
     vb_acc["poco_key"] = vb_acc["poco_key"].astype(str).str.strip().str.upper()
     vb_acc = vb_acc.dropna(subset=["Data", "poco_key"])
-    if isinstance(selected_period, (list, tuple)) and len(selected_period) == 2:
-        start, end = selected_period
-        if start:
-            vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(start)]
-        if end:
-            vb_acc = vb_acc[vb_acc["Data"] <= pd.to_datetime(end)]
+    if vb_start:
+        vb_acc = vb_acc[vb_acc["Data"] >= pd.to_datetime(vb_start)]
+    if vb_end:
+        vb_acc = vb_acc[vb_acc["Data"] <= pd.to_datetime(vb_end)]
 
     acc_line = (
         vb_acc[vb_acc["poco_key"].map(_norm_text) == "acumulado"]
@@ -944,36 +1245,24 @@ if subpage == "Operacional":
         else:
             min_vi_date = vi_plot["Data"].min()
             max_vi_date = vi_plot["Data"].max()
-            default_vi_range = None
-            if pd.notna(min_vi_date) and pd.notna(max_vi_date):
-                start_vi_default = max(min_vi_date, max_vi_date - pd.DateOffset(months=1))
-                default_vi_range = (start_vi_default.date(), max_vi_date.date())
 
-            vi_ctrl_cols = st.columns([2.4, 1.6], gap="small")
             default_outputs = non_acc_outputs if len(non_acc_outputs) <= 12 else non_acc_outputs[:12]
-            selected_outputs = vi_ctrl_cols[0].multiselect(
+            selected_outputs = st.multiselect(
                 "Saídas",
                 non_acc_outputs,
                 default=default_outputs,
                 key="avg_vi_outputs",
             )
-            selected_vi_period = vi_ctrl_cols[1].date_input(
-                "Periodo infiltrado",
-                value=default_vi_range,
-                format="DD/MM/YYYY",
-                key="avg_vi_period",
-            )
+            vi_start, vi_end = period_selector("avg_vi", min_vi_date, max_vi_date, default_preset="1 mês")
 
             if not selected_outputs:
                 st.info("Selecione ao menos uma saída para exibir o grafico.")
             else:
                 vi_plot = vi_plot[vi_plot["saida_key"].isin(selected_outputs)].copy()
-                if isinstance(selected_vi_period, (list, tuple)) and len(selected_vi_period) == 2:
-                    start_vi, end_vi = selected_vi_period
-                    if start_vi:
-                        vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(start_vi)]
-                    if end_vi:
-                        vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(end_vi)]
+                if vi_start:
+                    vi_plot = vi_plot[vi_plot["Data"] >= pd.to_datetime(vi_start)]
+                if vi_end:
+                    vi_plot = vi_plot[vi_plot["Data"] <= pd.to_datetime(vi_end)]
 
                 if vi_plot.empty:
                     st.info("Sem dados de volume infiltrado apos aplicar os filtros.")
@@ -991,12 +1280,10 @@ if subpage == "Operacional":
                     vi_acc["Data"] = pd.to_datetime(vi_acc["Data"], errors="coerce")
                     vi_acc["saida_key"] = vi_acc["saida_key"].astype(str).str.strip().str.upper()
                     vi_acc = vi_acc.dropna(subset=["Data", "saida_key"])
-                    if isinstance(selected_vi_period, (list, tuple)) and len(selected_vi_period) == 2:
-                        start_vi, end_vi = selected_vi_period
-                        if start_vi:
-                            vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(start_vi)]
-                        if end_vi:
-                            vi_acc = vi_acc[vi_acc["Data"] <= pd.to_datetime(end_vi)]
+                    if vi_start:
+                        vi_acc = vi_acc[vi_acc["Data"] >= pd.to_datetime(vi_start)]
+                    if vi_end:
+                        vi_acc = vi_acc[vi_acc["Data"] <= pd.to_datetime(vi_end)]
 
                     vi_acc_line = (
                         vi_acc[vi_acc["saida_key"].map(_norm_text) == "acumulado"]
@@ -1128,25 +1415,15 @@ if subpage == "Operacional":
     else:
         max_acc_date = all_dates.max()
         min_acc_date = all_dates.min()
-        start_acc_default = max(min_acc_date, max_acc_date - pd.DateOffset(months=1))
-        default_acc_range = (start_acc_default.date(), max_acc_date.date())
 
-        acc_cols = st.columns([2.4, 1.6], gap="small")
-        selected_acc_period = acc_cols[1].date_input(
-            "Periodo acumulado",
-            value=default_acc_range,
-            format="DD/MM/YYYY",
-            key="avg_acc_period",
-        )
+        acc_start, acc_end = period_selector("avg_acc", min_acc_date, max_acc_date, default_preset="1 mês")
 
-        if isinstance(selected_acc_period, (list, tuple)) and len(selected_acc_period) == 2:
-            acc_start, acc_end = selected_acc_period
-            if acc_start:
-                vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
-                vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
-            if acc_end:
-                vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
-                vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
+        if acc_start:
+            vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
+            vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
+        if acc_end:
+            vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
+            vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
 
         vb_acc_line = (
             vb_acc_src[vb_acc_src["poco_key"].map(_norm_text) == "acumulado"]
@@ -2176,7 +2453,7 @@ elif subpage == "In situ aprofundado":
                 break
 
     if file_obj is None:
-        st.info("Selecione um arquivo em 'Arquivo para In situ' na barra lateral.")
+        st.info("Nao foi encontrado um arquivo de In situ para esta visualizacao.")
         st.stop()
 
     try:
@@ -2201,41 +2478,23 @@ elif subpage == "In situ aprofundado":
 
     date_min = df_long["DataHora"].min()
     date_max = df_long["DataHora"].max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        start_default = max(date_min, date_max - pd.Timedelta(days=365))
-        default_range = (start_default.date(), date_max.date())
 
-    ctrl_cols = st.columns([2, 2, 2, 1.4], gap="small")
+    ctrl_cols = st.columns([2, 2, 2], gap="small")
     param1 = ctrl_cols[0].selectbox("Parâmetro principal", parametros)
     param2_options = ["(nenhum)"] + [p for p in parametros if p != param1]
     param2 = ctrl_cols[1].selectbox("Segundo parâmetro (opcional)", param2_options, index=0)
     pontos = sorted(df_long["poco_id"].dropna().unique().tolist())
-    default_pontos: list[str] = []
-    if default_range:
-        start_d, end_d = default_range
-        df_default = df_long.copy()
-        if start_d:
-            df_default = df_default[df_default["DataHora"] >= pd.to_datetime(start_d)]
-        if end_d:
-            df_default = df_default[df_default["DataHora"] <= pd.to_datetime(end_d)]
-        pontos_com_dados = sorted(df_default["poco_id"].dropna().unique().tolist())
-        if pontos_com_dados:
-            default_pontos = [pontos_com_dados[0]]
-    if not default_pontos and pontos:
-        default_pontos = [pontos[0]]
+    default_pontos: list[str] = [pontos[0]] if pontos else []
     pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
-    periodo = ctrl_cols[3].date_input("Período", value=default_range, format="DD/MM/YYYY")
+    aps_start, aps_end = period_selector("aps_insitu", date_min, date_max, default_preset="12 meses")
 
     data_filt = df_long.copy()
     if pontos_sel:
         data_filt = data_filt[data_filt["poco_id"].isin(pontos_sel)]
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        start, end = periodo
-        if start:
-            data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(start)]
-        if end:
-            data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(end)]
+    if aps_start:
+        data_filt = data_filt[data_filt["DataHora"] >= pd.to_datetime(aps_start)]
+    if aps_end:
+        data_filt = data_filt[data_filt["DataHora"] <= pd.to_datetime(aps_end)]
 
     df_plot1 = pivot_in_situ_for_plot(data_filt, param1)
     if df_plot1.empty:
@@ -2380,13 +2639,10 @@ elif subpage == "Laboratorial":
 
     date_min = df_lab["data_coleta"].min()
     date_max = df_lab["data_coleta"].max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        default_range = (date_min.date(), date_max.date())
 
     sample_ids = sorted(df_lab["identificacao_amostra"].dropna().unique().tolist())
 
-    ctrl_cols = st.columns([3.5, 3.5, 3], gap="small")
+    lab_ctrl_cols = st.columns([1, 1], gap="small")
     default_params = params[: min(6, len(params))]
     if "lab_selected_params" not in st.session_state:
         st.session_state["lab_selected_params"] = default_params
@@ -2399,32 +2655,30 @@ elif subpage == "Laboratorial":
     if st.session_state.get("lab_select_all_trigger", False):
         st.session_state["lab_selected_params"] = params.copy()
         st.session_state["lab_select_all_trigger"] = False
-    selected_params = ctrl_cols[0].multiselect(
+    selected_params = lab_ctrl_cols[0].multiselect(
         "Parâmetros",
         params,
         key="lab_selected_params",
     )
-    if ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
+    if lab_ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
         st.session_state["lab_select_all_trigger"] = True
         st.rerun()
-    selected_samples = ctrl_cols[1].multiselect(
+    selected_samples = lab_ctrl_cols[1].multiselect(
         "Identificação da amostra",
         sample_ids,
         default=sample_ids[:3] if sample_ids else [],
     )
-    periodo = ctrl_cols[2].date_input("Período", value=default_range, format="DD/MM/YYYY")
+    lab_start, lab_end = period_selector("lab", date_min, date_max, default_preset="Tudo")
 
     data_filt = df_lab.copy()
     if selected_params:
         data_filt = data_filt[data_filt["parametro"].isin(selected_params)]
     if selected_samples:
         data_filt = data_filt[data_filt["identificacao_amostra"].isin(selected_samples)]
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        start, end = periodo
-        if start:
-            data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(start)]
-        if end:
-            data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(end)]
+    if lab_start:
+        data_filt = data_filt[data_filt["data_coleta"] >= pd.to_datetime(lab_start)]
+    if lab_end:
+        data_filt = data_filt[data_filt["data_coleta"] <= pd.to_datetime(lab_end)]
 
     if data_filt.empty:
         st.info("Sem dados após os filtros selecionados.")
@@ -2549,9 +2803,6 @@ elif subpage == "In situ":
 
     date_min = pd.to_datetime(data_source["Data"], errors="coerce").min()
     date_max = pd.to_datetime(data_source["Data"], errors="coerce").max()
-    default_range = None
-    if pd.notna(date_min) and pd.notna(date_max):
-        default_range = (date_min.date(), date_max.date())
 
     if mode == "Por ponto":
         points = sorted(data_source["Ponto"].dropna().unique().tolist())
@@ -2559,15 +2810,15 @@ elif subpage == "In situ":
             st.info("Nenhum ponto encontrado na aba In Situ.")
             st.stop()
 
-        ctrl_cols = st.columns([2, 2, 1.4], gap="small")
-        selected_param = ctrl_cols[0].selectbox("Parametro", params)
+        is_ctrl_cols = st.columns([1, 1], gap="small")
+        selected_param = is_ctrl_cols[0].selectbox("Parametro", params)
         default_points = points if len(points) <= 8 else points[:8]
-        selected_points = ctrl_cols[1].multiselect(
+        selected_points = is_ctrl_cols[1].multiselect(
             "Pontos",
             points,
             default=default_points,
         )
-        date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
+        is_start, is_end = period_selector("is_pontos", date_min, date_max, default_preset="Tudo")
 
         if not selected_points:
             st.info("Selecione ao menos um ponto para exibir o grafico.")
@@ -2576,42 +2827,11 @@ elif subpage == "In situ":
         data = data_source[data_source["Ponto"].isin(selected_points)].copy()
         data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
         data = data.dropna(subset=["Data"])
-    else:
-        points = []
-        if "Ponto" in data_source.columns:
-            points = sorted(data_source["Ponto"].dropna().unique().tolist())
+        if is_start:
+            data = data[data["Data"] >= pd.to_datetime(is_start)]
+        if is_end:
+            data = data[data["Data"] <= pd.to_datetime(is_end)]
 
-        if points:
-            ctrl_cols = st.columns([2, 2, 1.4], gap="small")
-            selected_param = ctrl_cols[0].selectbox("Parametro", params)
-            default_points = points if len(points) <= 3 else points[:3]
-            selected_points = ctrl_cols[1].multiselect(
-                "Pontos gerais",
-                points,
-                default=default_points,
-            )
-            date_input = ctrl_cols[2].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
-            if not selected_points:
-                st.info("Selecione ao menos um ponto para exibir o grafico.")
-                st.stop()
-            data = data_source[data_source["Ponto"].isin(selected_points)].copy()
-        else:
-            ctrl_cols = st.columns([2, 1.4], gap="small")
-            selected_param = ctrl_cols[0].selectbox("Parametro", params)
-            date_input = ctrl_cols[1].date_input("Periodo", value=default_range, format="DD/MM/YYYY")
-            data = data_source.copy()
-
-        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-        data = data.dropna(subset=["Data"])
-
-    if isinstance(date_input, (list, tuple)) and len(date_input) == 2:
-        start, end = date_input
-        if start:
-            data = data[data["Data"] >= pd.to_datetime(start)]
-        if end:
-            data = data[data["Data"] <= pd.to_datetime(end)]
-
-    if mode == "Por ponto":
         chart_df = (
             data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
             .reset_index()
@@ -2623,14 +2843,8 @@ elif subpage == "In situ":
             st.stop()
 
         palette = [
-            "#1f77b4",
-            "#ff7f0e",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-            "#e377c2",
-            "#17becf",
+            "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+            "#9467bd", "#8c564b", "#e377c2", "#17becf",
         ]
         series = [
             SeriesSpec(
@@ -2643,39 +2857,114 @@ elif subpage == "In situ":
             )
             for i, col in enumerate(value_cols)
         ]
+
+        fig3, _ = build_time_chart_plotly(
+            chart_df,
+            x="Data",
+            series=series,
+            title=f"{selected_param} - In situ",
+            show_range_slider=False,
+            limit_points=200000,
+        )
+        fig3.update_yaxes(title_text=selected_param, secondary_y=False)
+        apply_graph_theme(fig3)
+        st.plotly_chart(fig3, use_container_width=True)
+
     else:
-        if "Ponto" in data.columns:
-            chart_df = (
-                data.pivot_table(index="Data", columns="Ponto", values=selected_param, aggfunc="mean")
-                .reset_index()
-                .sort_values("Data")
+        if "Ponto" in data_source.columns:
+            # Multiselect: cada parâmetro gera duas linhas (Entrada e Saída)
+            selected_params_list = st.multiselect(
+                "Parâmetros",
+                params,
+                default=[params[0]] if params else [],
+                key="is_geral_params_multi",
             )
-            value_cols = [c for c in chart_df.columns if c != "Data"]
-            if not value_cols:
-                st.info("Nao ha valores para o parametro selecionado no In situ geral.")
+            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+            if not selected_params_list:
+                st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
                 st.stop()
-            palette = [
-                "#1f77b4",
-                "#ff7f0e",
-                "#2ca02c",
-                "#d62728",
-                "#9467bd",
-                "#8c564b",
-                "#e377c2",
-                "#17becf",
-            ]
-            series = [
-                SeriesSpec(
-                    y=col,
-                    label=f"{col} - {selected_param}",
-                    kind="line",
-                    marker="circle",
-                    color=palette[i % len(palette)],
-                    connect_gaps=True,
+
+            data = data_source.copy()
+            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+            data = data.dropna(subset=["Data"])
+            if is_start:
+                data = data[data["Data"] >= pd.to_datetime(is_start)]
+            if is_end:
+                data = data[data["Data"] <= pd.to_datetime(is_end)]
+
+            chart_frames = []
+            param_col_map: dict[str, list[str]] = {}
+            _SEP = " – "
+
+            for param in selected_params_list:
+                if param not in data.columns:
+                    continue
+                pivot = (
+                    data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
+                    .sort_index()
                 )
-                for i, col in enumerate(value_cols)
+                pivot.columns = [f"{param}{_SEP}{col}" for col in pivot.columns]
+                param_col_map[param] = pivot.columns.tolist()
+                chart_frames.append(pivot)
+
+            if not chart_frames:
+                st.info("Nao ha valores para os parâmetros selecionados.")
+                st.stop()
+
+            chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
+
+            # Uma cor por parâmetro; linha sólida/círculo para Entrada, tracejada/quadrado para Saída
+            param_colors = [
+                "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
+                "#8c564b", "#e377c2", "#17becf", "#bcbd22",
             ]
+
+            series = []
+            for p_idx, param in enumerate(selected_params_list):
+                color = param_colors[p_idx % len(param_colors)]
+                for col in param_col_map.get(param, []):
+                    ponto_part = col[len(param) + len(_SEP):]
+                    is_entrada = "entr" in ponto_part.lower()
+                    series.append(
+                        SeriesSpec(
+                            y=col,
+                            label=col,
+                            kind="line",
+                            marker="circle" if is_entrada else "square",
+                            line_dash="solid" if is_entrada else "dash",
+                            color=color,
+                            connect_gaps=True,
+                        )
+                    )
+
+            if not series:
+                st.info("Nenhuma série disponível para os parâmetros selecionados.")
+                st.stop()
+
+            fig3, _ = build_time_chart_plotly(
+                chart_df,
+                x="Data",
+                series=series,
+                title="In situ – Entrada vs Saída",
+                show_range_slider=False,
+                limit_points=200000,
+            )
+            apply_graph_theme(fig3)
+            st.plotly_chart(fig3, use_container_width=True)
+
         else:
+            selected_param = st.selectbox("Parametro", params)
+            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+            data = data_source.copy()
+            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+            data = data.dropna(subset=["Data"])
+            if is_start:
+                data = data[data["Data"] >= pd.to_datetime(is_start)]
+            if is_end:
+                data = data[data["Data"] <= pd.to_datetime(is_end)]
+
             chart_df = (
                 data.groupby("Data", as_index=False)[selected_param]
                 .mean()
@@ -2684,6 +2973,7 @@ elif subpage == "In situ":
             if chart_df.empty:
                 st.info("Nao ha valores para o parametro selecionado no In situ geral.")
                 st.stop()
+
             series = [
                 SeriesSpec(
                     y=selected_param,
@@ -2695,4 +2985,14 @@ elif subpage == "In situ":
                 )
             ]
 
-        chart_df = chart_df.rename(columns={selected_param: f"{selected_param}__p1"})   
+            fig3, _ = build_time_chart_plotly(
+                chart_df,
+                x="Data",
+                series=series,
+                title=f"{selected_param} - In situ",
+                show_range_slider=False,
+                limit_points=200000,
+            )
+            fig3.update_yaxes(title_text=selected_param, secondary_y=False)
+            apply_graph_theme(fig3)
+            st.plotly_chart(fig3, use_container_width=True)

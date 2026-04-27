@@ -211,12 +211,6 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
 
         st.info("Gráficos adicionais carregados após processamento.")
 
-
-# ================== SIDEBAR ==================
-with st.sidebar:
-    st.header("Entrada de dados")
-    st.info("Use o botão abaixo para enviar o Excel.")
-
 st.subheader("Carregar Excel")
 
 uploaded_main = st.file_uploader(
@@ -241,6 +235,6 @@ if isinstance(df_dict, dict):
 
     if st.button("📈 Criar gráfico", use_container_width=True):
         try:
-            st.switch_page("pages/create_graph.py")
+            st.switch_page("pages/create_graph_operacional.py")
         except Exception:
             st.error("Erro ao abrir página de gráficos.")

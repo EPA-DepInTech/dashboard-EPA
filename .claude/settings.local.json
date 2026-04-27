@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app/pages/create_graph.py)",
+      "Bash(python -m py_compile app/components/period_selector.py)",
+      "Bash(python -m py_compile tests/test_create_graph_prep.py)",
+      "Bash(git add *)"
+    ]
+  }
+}

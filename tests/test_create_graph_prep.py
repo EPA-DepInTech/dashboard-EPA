@@ -41,7 +41,6 @@ def _load_create_graph_helpers():
     exec(helper_source, module.__dict__)
     return module
 
-
 cg = _load_create_graph_helpers()
 
 
