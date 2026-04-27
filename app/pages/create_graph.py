@@ -8,7 +8,6 @@ import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
 from components.period_selector import period_selector
-from components.period_selector import period_selector
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
@@ -1063,41 +1062,6 @@ else:
     theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
     with theme_col:
         render_graph_theme_toggle()
-subpage = st.session_state.get("create_graph_subpage", "Operacional")
-if subpage not in subpage_options:
-    subpage = "Operacional"
-st.session_state["create_graph_subpage"] = subpage
-
-if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"):
-    st.markdown(
-        """
-        <style>
-            section[data-testid="stSidebar"] {
-                display: none;
-            }
-
-            button[kind="header"],
-            [data-testid="collapsedControl"] {
-                display: none;
-            }
-
-            [data-testid="stAppViewContainer"] [data-testid="stMain"] > div:first-child {
-                padding-top: 0.75rem !important;
-            }
-
-            [data-testid="stAppViewContainer"] [data-testid="stMain"] .stSubheader {
-                margin-top: 0 !important;
-                padding-top: 0 !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    render_graph_theme_header_toggle()
-else:
-    theme_spacer, theme_col = st.columns([0.84, 0.16], gap="small")
-    with theme_col:
-        render_graph_theme_toggle()
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
@@ -1122,13 +1086,10 @@ if subpage == "Operacional":
     default_points = non_acc_points if len(non_acc_points) <= 12 else non_acc_points[:12]
     selected_points = st.multiselect(
         "Poços",
-    selected_points = st.multiselect(
-        "Poços",
         non_acc_points,
         default=default_points,
         key="avg_vb_points",
     )
-    vb_start, vb_end = period_selector("avg_vb", min_date, max_date, default_preset="1 mês")
     vb_start, vb_end = period_selector("avg_vb", min_date, max_date, default_preset="1 mês")
 
     if not selected_points:
@@ -1299,13 +1260,11 @@ if subpage == "Operacional":
 
             default_outputs = non_acc_outputs if len(non_acc_outputs) <= 12 else non_acc_outputs[:12]
             selected_outputs = st.multiselect(
-            selected_outputs = st.multiselect(
                 "Saídas",
                 non_acc_outputs,
                 default=default_outputs,
                 key="avg_vi_outputs",
             )
-            vi_start, vi_end = period_selector("avg_vi", min_vi_date, max_vi_date, default_preset="1 mês")
             vi_start, vi_end = period_selector("avg_vi", min_vi_date, max_vi_date, default_preset="1 mês")
 
             if not selected_outputs:
@@ -1477,15 +1436,6 @@ if subpage == "Operacional":
     else:
         max_acc_date = all_dates.max()
         min_acc_date = all_dates.min()
-
-        acc_start, acc_end = period_selector("avg_acc", min_acc_date, max_acc_date, default_preset="1 mês")
-
-        if acc_start:
-            vb_acc_src = vb_acc_src[vb_acc_src["Data"] >= pd.to_datetime(acc_start)]
-            vi_acc_src = vi_acc_src[vi_acc_src["Data"] >= pd.to_datetime(acc_start)]
-        if acc_end:
-            vb_acc_src = vb_acc_src[vb_acc_src["Data"] <= pd.to_datetime(acc_end)]
-            vi_acc_src = vi_acc_src[vi_acc_src["Data"] <= pd.to_datetime(acc_end)]
 
         acc_start, acc_end = period_selector("avg_acc", min_acc_date, max_acc_date, default_preset="1 mês")
 
@@ -2562,7 +2512,6 @@ elif subpage == "In situ aprofundado":
     default_pontos: list[str] = [pontos[0]] if pontos else []
     pontos_sel = ctrl_cols[2].multiselect("Poços", pontos, default=default_pontos)
     aps_start, aps_end = period_selector("aps_insitu", date_min, date_max, default_preset="12 meses")
-    aps_start, aps_end = period_selector("aps_insitu", date_min, date_max, default_preset="12 meses")
 
     data_filt = df_long.copy()
     if pontos_sel:
@@ -2737,22 +2686,18 @@ elif subpage == "Laboratorial":
         st.session_state["lab_selected_params"] = params.copy()
         st.session_state["lab_select_all_trigger"] = False
     selected_params = lab_ctrl_cols[0].multiselect(
-    selected_params = lab_ctrl_cols[0].multiselect(
         "Parâmetros",
         params,
         key="lab_selected_params",
     )
     if lab_ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
-    if lab_ctrl_cols[0].button("Selecionar todos parâmetros", use_container_width=True):
         st.session_state["lab_select_all_trigger"] = True
         st.rerun()
-    selected_samples = lab_ctrl_cols[1].multiselect(
     selected_samples = lab_ctrl_cols[1].multiselect(
         "Identificação da amostra",
         sample_ids,
         default=sample_ids[:3] if sample_ids else [],
     )
-    lab_start, lab_end = period_selector("lab", date_min, date_max, default_preset="Tudo")
     lab_start, lab_end = period_selector("lab", date_min, date_max, default_preset="Tudo")
 
     data_filt = df_lab.copy()
@@ -2903,16 +2848,12 @@ elif subpage == "In situ":
 
         is_ctrl_cols = st.columns([1, 1], gap="small")
         selected_param = is_ctrl_cols[0].selectbox("Parametro", params)
-        is_ctrl_cols = st.columns([1, 1], gap="small")
-        selected_param = is_ctrl_cols[0].selectbox("Parametro", params)
         default_points = points if len(points) <= 8 else points[:8]
-        selected_points = is_ctrl_cols[1].multiselect(
         selected_points = is_ctrl_cols[1].multiselect(
             "Pontos",
             points,
             default=default_points,
         )
-        is_start, is_end = period_selector("is_pontos", date_min, date_max, default_preset="Tudo")
         is_start, is_end = period_selector("is_pontos", date_min, date_max, default_preset="Tudo")
 
         if not selected_points:
@@ -2922,10 +2863,6 @@ elif subpage == "In situ":
         data = data_source[data_source["Ponto"].isin(selected_points)].copy()
         data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
         data = data.dropna(subset=["Data"])
-        if is_start:
-            data = data[data["Data"] >= pd.to_datetime(is_start)]
-        if is_end:
-            data = data[data["Data"] <= pd.to_datetime(is_end)]
         if is_start:
             data = data[data["Data"] >= pd.to_datetime(is_start)]
         if is_end:
@@ -2942,8 +2879,6 @@ elif subpage == "In situ":
             st.stop()
 
         palette = [
-            "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
-            "#9467bd", "#8c564b", "#e377c2", "#17becf",
             "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
             "#9467bd", "#8c564b", "#e377c2", "#17becf",
         ]
@@ -2971,6 +2906,116 @@ elif subpage == "In situ":
         apply_graph_theme(fig3)
         st.plotly_chart(fig3, use_container_width=True)
 
+    elif "Ponto" in data_source.columns:
+        selected_params_list = st.multiselect(
+            "Parâmetros",
+            params,
+            default=[params[0]] if params else [],
+            key="is_geral_params_multi",
+        )
+        is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+        if not selected_params_list:
+            st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
+            st.stop()
+
+        data = data_source.copy()
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
+        if is_start:
+            data = data[data["Data"] >= pd.to_datetime(is_start)]
+        if is_end:
+            data = data[data["Data"] <= pd.to_datetime(is_end)]
+
+        chart_frames = []
+        param_col_map: dict[str, list[str]] = {}
+        sep = " – "
+
+        for param in selected_params_list:
+            if param not in data.columns:
+                continue
+            pivot = (
+                data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
+                .sort_index()
+            )
+            pivot.columns = [f"{param}{sep}{col}" for col in pivot.columns]
+            param_col_map[param] = pivot.columns.tolist()
+            chart_frames.append(pivot)
+
+        if not chart_frames:
+            st.info("Nao ha valores para os parâmetros selecionados.")
+            st.stop()
+
+        chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
+        param_colors = [
+            "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#17becf", "#bcbd22",
+        ]
+
+        series = []
+        for p_idx, param in enumerate(selected_params_list):
+            color = param_colors[p_idx % len(param_colors)]
+            for col in param_col_map.get(param, []):
+                ponto_part = col[len(param) + len(sep):]
+                is_entrada = "entr" in ponto_part.lower()
+                series.append(
+                    SeriesSpec(
+                        y=col,
+                        label=col,
+                        kind="line",
+                        marker="circle" if is_entrada else "square",
+                        line_dash="solid" if is_entrada else "dash",
+                        color=color,
+                        connect_gaps=True,
+                    )
+                )
+
+        if not series:
+            st.info("Nenhuma série disponível para os parâmetros selecionados.")
+            st.stop()
+
+        fig3, _ = build_time_chart_plotly(
+            chart_df,
+            x="Data",
+            series=series,
+            title="In situ – Entrada vs Saída",
+            show_range_slider=False,
+            limit_points=200000,
+        )
+        apply_graph_theme(fig3)
+        st.plotly_chart(fig3, use_container_width=True)
+
+    else:
+        selected_param = st.selectbox("Parametro", params)
+        is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
+
+        data = data_source.copy()
+        data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
+        data = data.dropna(subset=["Data"])
+        if is_start:
+            data = data[data["Data"] >= pd.to_datetime(is_start)]
+        if is_end:
+            data = data[data["Data"] <= pd.to_datetime(is_end)]
+
+        chart_df = (
+            data.groupby("Data", as_index=False)[selected_param]
+            .mean()
+            .sort_values("Data")
+        )
+        if chart_df.empty:
+            st.info("Nao ha valores para o parametro selecionado no In situ geral.")
+            st.stop()
+
+        series = [
+            SeriesSpec(
+                y=selected_param,
+                label=f"{selected_param} - In situ geral",
+                kind="line",
+                marker="circle",
+                color="#8c564b",
+                connect_gaps=True,
+            )
+        ]
 
         fig3, _ = build_time_chart_plotly(
             chart_df,
@@ -2983,234 +3028,3 @@ elif subpage == "In situ":
         fig3.update_yaxes(title_text=selected_param, secondary_y=False)
         apply_graph_theme(fig3)
         st.plotly_chart(fig3, use_container_width=True)
-
-    else:
-        if "Ponto" in data_source.columns:
-            # Multiselect: cada parâmetro gera duas linhas (Entrada e Saída)
-            selected_params_list = st.multiselect(
-                "Parâmetros",
-                params,
-                default=[params[0]] if params else [],
-                key="is_geral_params_multi",
-            )
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
-
-            if not selected_params_list:
-                st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
-        if "Ponto" in data_source.columns:
-            # Multiselect: cada parâmetro gera duas linhas (Entrada e Saída)
-            selected_params_list = st.multiselect(
-                "Parâmetros",
-                params,
-                default=[params[0]] if params else [],
-                key="is_geral_params_multi",
-            )
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
-
-            if not selected_params_list:
-                st.info("Selecione ao menos um parâmetro para exibir o gráfico.")
-                st.stop()
-
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
-
-            chart_frames = []
-            param_col_map: dict[str, list[str]] = {}
-            _SEP = " – "
-
-            for param in selected_params_list:
-                if param not in data.columns:
-                    continue
-                pivot = (
-                    data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
-                    .sort_index()
-                )
-                pivot.columns = [f"{param}{_SEP}{col}" for col in pivot.columns]
-                param_col_map[param] = pivot.columns.tolist()
-                chart_frames.append(pivot)
-
-            if not chart_frames:
-                st.info("Nao ha valores para os parâmetros selecionados.")
-                st.stop()
-
-            chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
-
-            # Uma cor por parâmetro; linha sólida/círculo para Entrada, tracejada/quadrado para Saída
-            param_colors = [
-                "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
-                "#8c564b", "#e377c2", "#17becf", "#bcbd22",
-            ]
-
-            series = []
-            for p_idx, param in enumerate(selected_params_list):
-                color = param_colors[p_idx % len(param_colors)]
-                for col in param_col_map.get(param, []):
-                    ponto_part = col[len(param) + len(_SEP):]
-                    is_entrada = "entr" in ponto_part.lower()
-                    series.append(
-                        SeriesSpec(
-                            y=col,
-                            label=col,
-                            kind="line",
-                            marker="circle" if is_entrada else "square",
-                            line_dash="solid" if is_entrada else "dash",
-                            color=color,
-                            connect_gaps=True,
-                        )
-                    )
-
-            if not series:
-                st.info("Nenhuma série disponível para os parâmetros selecionados.")
-                st.stop()
-
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title="In situ – Entrada vs Saída",
-                show_range_slider=False,
-                limit_points=200000,
-            )
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-
-
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
-
-            chart_frames = []
-            param_col_map: dict[str, list[str]] = {}
-            _SEP = " – "
-
-            for param in selected_params_list:
-                if param not in data.columns:
-                    continue
-                pivot = (
-                    data.pivot_table(index="Data", columns="Ponto", values=param, aggfunc="mean")
-                    .sort_index()
-                )
-                pivot.columns = [f"{param}{_SEP}{col}" for col in pivot.columns]
-                param_col_map[param] = pivot.columns.tolist()
-                chart_frames.append(pivot)
-
-            if not chart_frames:
-                st.info("Nao ha valores para os parâmetros selecionados.")
-                st.stop()
-
-            chart_df = pd.concat(chart_frames, axis=1).reset_index().sort_values("Data")
-
-            # Uma cor por parâmetro; linha sólida/círculo para Entrada, tracejada/quadrado para Saída
-            param_colors = [
-                "#1f77b4", "#2ca02c", "#d62728", "#9467bd",
-                "#8c564b", "#e377c2", "#17becf", "#bcbd22",
-            ]
-
-            series = []
-            for p_idx, param in enumerate(selected_params_list):
-                color = param_colors[p_idx % len(param_colors)]
-                for col in param_col_map.get(param, []):
-                    ponto_part = col[len(param) + len(_SEP):]
-                    is_entrada = "entr" in ponto_part.lower()
-                    series.append(
-                        SeriesSpec(
-                            y=col,
-                            label=col,
-                            kind="line",
-                            marker="circle" if is_entrada else "square",
-                            line_dash="solid" if is_entrada else "dash",
-                            color=color,
-                            connect_gaps=True,
-                        )
-                    )
-
-            if not series:
-                st.info("Nenhuma série disponível para os parâmetros selecionados.")
-                st.stop()
-
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title="In situ – Entrada vs Saída",
-                show_range_slider=False,
-                limit_points=200000,
-            )
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-
-        else:
-            selected_param = st.selectbox("Parametro", params)
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
-
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
-
-            selected_param = st.selectbox("Parametro", params)
-            is_start, is_end = period_selector("is_geral", date_min, date_max, default_preset="Tudo")
-
-            data = data_source.copy()
-            data["Data"] = pd.to_datetime(data["Data"], errors="coerce")
-            data = data.dropna(subset=["Data"])
-            if is_start:
-                data = data[data["Data"] >= pd.to_datetime(is_start)]
-            if is_end:
-                data = data[data["Data"] <= pd.to_datetime(is_end)]
-
-            chart_df = (
-                data.groupby("Data", as_index=False)[selected_param]
-                .mean()
-                .sort_values("Data")
-            )
-            if chart_df.empty:
-                st.info("Nao ha valores para o parametro selecionado no In situ geral.")
-                st.stop()
-
-
-            series = [
-                SeriesSpec(
-                    y=selected_param,
-                    label=f"{selected_param} - In situ geral",
-                    kind="line",
-                    marker="circle",
-                    color="#8c564b",
-                    connect_gaps=True,
-                )
-            ]
-
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title=f"{selected_param} - In situ",
-                show_range_slider=False,
-                limit_points=200000,
-            )
-            fig3.update_yaxes(title_text=selected_param, secondary_y=False)
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-            fig3, _ = build_time_chart_plotly(
-                chart_df,
-                x="Data",
-                series=series,
-                title=f"{selected_param} - In situ",
-                show_range_slider=False,
-                limit_points=200000,
-            )
-            fig3.update_yaxes(title_text=selected_param, secondary_y=False)
-            apply_graph_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
