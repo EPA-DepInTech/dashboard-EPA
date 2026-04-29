@@ -34,3 +34,6 @@ Thumbs.db
 *.xlsx
 *.xls
 *.csv
+
+# claude
+.claude/
