@@ -63,6 +63,32 @@ def _find_col(df: pd.DataFrame, tokens: list[str]) -> str | None:
     return None
 
 
+def _current_plotly_theme() -> tuple[str, str]:
+    theme_type = None
+
+    try:
+        context_theme = getattr(st.context, "theme", {}) or {}
+        theme_type = context_theme.get("type")
+    except Exception:
+        theme_type = None
+
+    theme_type = theme_type or st.session_state.get("graph_theme") or st.get_option("theme.base") or "light"
+    is_dark = str(theme_type).lower() == "dark"
+    return ("plotly_dark" if is_dark else "plotly_white", "rgba(255,255,255,0.72)" if is_dark else "#ffffff")
+
+
+def _apply_dashboard_chart_style(fig, *, template: str) -> None:
+    fig.update_layout(
+        template=template,
+        margin=dict(l=20, r=20, t=70, b=30),
+        title_font=dict(size=22),
+        legend=dict(font=dict(size=16)),
+        title=dict(pad=dict(t=16, b=8)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+
+
 # ================== OVERVIEW ==================
 def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
     na_raw = df_dict.get("NA Semanal")
@@ -133,6 +159,7 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
     )
 
     st.subheader("Resumo Operacional")
+    plotly_template, outline_color = _current_plotly_theme()
 
     left, right = st.columns(2)
 
@@ -146,23 +173,12 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
                 x="Mes",
                 y="Amostras",
                 title="Amostras por mês",
+                template=plotly_template,
             )
-            fig_month.update_layout(
-                margin=dict(l=20, r=20, t=70, b=30),
-                title_font=dict(size=22, color="#000"),
-                legend=dict(font=dict(size=16, color="#000")),
-                font=dict(color="#000"),
-                title=dict(pad=dict(t=16, b=8)),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
-            fig_month.update_xaxes(
-                tickfont=dict(color="#000"),
-                title_font=dict(color="#000"),
-            )
-            fig_month.update_yaxes(
-                tickfont=dict(color="#000"),
-                title_font=dict(color="#000"),
+            _apply_dashboard_chart_style(fig_month, template=plotly_template)
+            fig_month.update_traces(
+                marker_line_color=outline_color,
+                marker_line_width=0.8,
             )
             st.plotly_chart(fig_month, use_container_width=True)
 
@@ -177,15 +193,11 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
             values="Quantidade",
             hole=0.45,
             title="Poços na última medição",
+            template=plotly_template,
         )
-        fig_dry.update_layout(
-            margin=dict(l=20, r=20, t=70, b=30),
-            title_font=dict(size=22, color="#000"),
-            legend=dict(font=dict(size=16, color="#000")),
-            font=dict(color="#000"),
-            title=dict(pad=dict(t=16, b=8)),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
+        _apply_dashboard_chart_style(fig_dry, template=plotly_template)
+        fig_dry.update_traces(
+            marker=dict(line=dict(color=outline_color, width=1.2)),
         )
         st.plotly_chart(fig_dry, use_container_width=True)
 
@@ -196,16 +208,11 @@ def _build_overview(df_dict: dict[str, pd.DataFrame]) -> None:
                 values="quantidade",
                 hole=0.4,
                 title="Tipos de poços (prefixo)",
+                template=plotly_template,
             )
-            fig_types.update_layout(
-                margin=dict(l=20, r=20, t=70, b=30),
-                title_font=dict(size=22, color="#000"),
-                legend=dict(font=dict(size=16, color="#000"),
-                ),
-                font=dict(color="#000"),
-                title=dict(pad=dict(t=16, b=8)),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
+            _apply_dashboard_chart_style(fig_types, template=plotly_template)
+            fig_types.update_traces(
+                marker=dict(line=dict(color=outline_color, width=1.2)),
             )
             st.plotly_chart(fig_types, use_container_width=True)
 
