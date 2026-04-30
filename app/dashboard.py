@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import streamlit as st
+from core.theme import apply_global_theme_styles, ensure_theme_state, render_global_theme_header_toggle
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -10,6 +11,7 @@ CSS_PATH = BASE_DIR / "style" / "style.css"
 LOGO_PATH = BASE_DIR / "style" / "epa_logo.png"
 
 st.set_page_config(page_title="Dashboard - Grupo EPA", layout="wide")
+ensure_theme_state()
 
 if CSS_PATH.exists():
     st.markdown(f"<style>{CSS_PATH.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
@@ -21,6 +23,9 @@ if LOGO_PATH.exists():
     logo_bytes = LOGO_PATH.read_bytes()
     st.logo(logo_bytes, icon_image=logo_bytes)
     st.session_state["_global_logo_loaded"] = True
+
+apply_global_theme_styles()
+render_global_theme_header_toggle()
 
 if "splash_shown" not in st.session_state:
     st.session_state["splash_shown"] = False

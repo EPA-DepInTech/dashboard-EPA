@@ -8,6 +8,7 @@ import streamlit as st
 
 from charts.builder import SeriesSpec, build_time_chart_plotly
 from components.period_selector import period_selector
+from core.theme import apply_global_theme_styles, ensure_theme_state
 from services.date_num_prep import normalize_dates, parse_ptbr_number
 from services.in_situ_parser import read_in_situ_excel, pivot_in_situ_for_plot
 
@@ -22,6 +23,8 @@ def ensure_global_css_loaded() -> None:
 
 
 ensure_global_css_loaded()
+ensure_theme_state()
+apply_global_theme_styles()
 
 
 def _norm_key(value: object) -> str:
@@ -753,7 +756,36 @@ if in_situ_pontos is not None or in_situ_geral is not None:
 subpage_options.append("In situ aprofundado")
 subpage_options.append("Laboratorial")
 
-subpage = st.selectbox("Selecione a visualizacao", subpage_options)
+subpage = st.session_state.get("create_graph_subpage", "Operacional")
+if subpage not in subpage_options:
+    subpage = "Operacional"
+st.session_state["create_graph_subpage"] = subpage
+
+if subpage == "Operacional" and st.session_state.get("create_graph_hide_sidebar"):
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"] {
+                display: none;
+            }
+
+            button[kind="header"],
+            [data-testid="collapsedControl"] {
+                display: none;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] > div:first-child {
+                padding-top: 0.75rem !important;
+            }
+
+            [data-testid="stAppViewContainer"] [data-testid="stMain"] .stSubheader {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 if subpage == "Operacional":
     st.subheader("Volume bombeado por poço")
