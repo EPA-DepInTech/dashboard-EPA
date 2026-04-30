@@ -27,280 +27,6 @@ ensure_theme_state()
 apply_global_theme_styles()
 
 
-def apply_graph_theme(fig):
-    if 'graph_theme' not in st.session_state:
-        st.session_state['graph_theme'] = 'light'
-    theme = st.session_state['graph_theme']
-    if theme == 'dark':
-        axis_style = dict(
-            gridcolor="#3f3f46",
-            zerolinecolor="#71717a",
-            linecolor="#e5e7eb",
-            tickfont=dict(color="#e5e7eb", size=13),
-            title_font=dict(color="#f8fafc", size=15),
-            showline=True,
-            showgrid=True,
-        )
-        fig.update_layout(
-            template='plotly_dark',
-            paper_bgcolor="#000000",
-            plot_bgcolor="#000000",
-            font_color="#e5e7eb",
-            title_font=dict(color='#f8fafc', size=20, family='Segoe UI, Arial'),
-            legend=dict(
-                bgcolor="rgba(2, 6, 23, 0.88)",
-                bordercolor='#334155',
-                font=dict(color='#f8fafc', size=13),
-            ),
-            colorway=[
-                '#2563eb', '#16a34a', '#f59e42', '#e11d48', '#7c3aed',
-                '#0ea5e9', '#facc15', '#f472b6', '#a3e635', '#f87171',
-            ],
-        )
-    else:
-        axis_style = dict(
-            gridcolor='#e5e7eb',
-            zerolinecolor='#e5e7eb',
-            linecolor="#334155",
-            tickfont=dict(color='#181c1f', size=13),
-            title_font=dict(color="#111827", size=15),
-            showline=True,
-            showgrid=True,
-        )
-        fig.update_layout(
-            template='plotly_white',
-            paper_bgcolor='#f8fafc',
-            plot_bgcolor='#f8fafc',
-            font_color="#000000",
-            title_font=dict(color="#181a1b", size=20, family='Segoe UI, Arial'),
-            legend=dict(
-                bgcolor='rgba(255, 255, 255, 0.92)',
-                bordercolor='#cbd5e1',
-                font=dict(color="#111827", size=13),
-            ),
-            colorway=[
-                '#2563eb', "#003b16", '#f59e42', '#e11d48', "#2f0675",
-                "#4597bd", '#facc15', '#f472b6', '#a3e635', '#f87171',
-            ],
-        )
-    fig.update_xaxes(**axis_style)
-    fig.update_yaxes(**axis_style)
-    fig.update_layout(
-        yaxis2=dict(
-            gridcolor=axis_style["gridcolor"],
-            zerolinecolor=axis_style["zerolinecolor"],
-            linecolor=axis_style["linecolor"],
-            tickfont=axis_style["tickfont"],
-            title=dict(font=axis_style["title_font"]),
-            showline=axis_style["showline"],
-            showgrid=axis_style["showgrid"],
-        )
-    )
-    return fig
-
-
-def render_graph_theme_toggle(key_suffix: str = "default") -> None:
-    if "graph_theme" not in st.session_state:
-        st.session_state["graph_theme"] = "light"
-    current_theme = st.session_state["graph_theme"]
-    if current_theme == "light":
-        next_theme = "dark"
-        button_label = "Modo Escuro"
-        button_icon = ":material/dark_mode:"
-    else:
-        next_theme = "light"
-        button_label = "Modo Claro"
-        button_icon = ":material/light_mode:"
-    if st.button(
-        button_label,
-        icon=button_icon,
-        use_container_width=True,
-        key=f"global_graph_theme_toggle_{key_suffix}",
-    ):
-        st.session_state["graph_theme"] = next_theme
-        st.rerun()
-
-
-def render_graph_theme_header_toggle() -> None:
-    st.markdown(
-        """
-        <style>
-            .st-key-graph_theme_header_toggle {
-                position: fixed;
-                top: 0.3rem;
-                right: 3.75rem;
-                z-index: 999992;
-                width: auto;
-                max-width: max-content;
-                margin: 0;
-                padding: 0;
-                overflow: visible;
-                writing-mode: horizontal-tb;
-            }
-
-            .st-key-graph_theme_header_toggle > div {
-                width: auto !important;
-                max-width: max-content;
-            }
-
-            .st-key-graph_theme_header_toggle div[data-testid="stVerticalBlock"] {
-                gap: 0;
-                width: auto !important;
-                max-width: max-content;
-            }
-
-            .st-key-graph_theme_header_toggle .stButton {
-                margin: 0;
-                width: auto;
-            }
-
-            .st-key-graph_theme_header_toggle .stButton > button {
-                width: auto;
-                min-height: 2.5rem;
-                padding: 0.45rem 0.9rem;
-                border-radius: 14px;
-                border: 1px solid #0f766e;
-                background: #00352f;
-                color: #e5e7eb;
-                box-shadow: none;
-                font-weight: 600;
-                white-space: nowrap;
-            }
-
-            .st-key-graph_theme_header_toggle .stButton > button:hover {
-                background: #004d44;
-                color: #ffffff;
-                transform: none;
-                box-shadow: none;
-            }
-
-            .st-key-graph_theme_header_toggle .stButton > button span[data-testid="stIconMaterial"] {
-                font-size: 1rem;
-            }
-
-            @media (max-width: 1100px) {
-                .st-key-graph_theme_header_toggle {
-                    right: 3.25rem;
-                }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    with st.container(key="graph_theme_header_toggle"):
-        render_graph_theme_toggle("header")
-
-
-def render_create_graph_tabs(options: list[str]) -> str:
-    st.markdown(
-        """
-        <style>
-            .st-key-create_graph_header_bar {
-                position: sticky;
-                top: 0;
-                z-index: 999989;
-                margin: -5.95rem 10.75rem 0.85rem -1rem;
-                padding: 0.15rem 0 0;
-                background: var(--global-page-bg, #000000);
-                border-bottom: 1px solid var(--global-accent-border, #0f766e);
-            }
-
-            .st-key-create_graph_header_bar > div[data-testid="stHorizontalBlock"] {
-                align-items: end;
-            }
-
-            .st-key-create_graph_header_bar div[data-testid="stRadio"] > label {
-                display: none;
-            }
-
-            .st-key-create_graph_header_bar div[data-testid="stRadio"] {
-                margin: 0;
-            }
-
-            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div {
-                overflow-x: auto;
-                overflow-y: hidden;
-                scrollbar-width: none;
-            }
-
-            .st-key-create_graph_header_bar div[data-testid="stRadio"] > div::-webkit-scrollbar {
-                display: none;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] {
-                align-items: flex-end;
-                background: transparent;
-                display: flex;
-                flex-wrap: nowrap;
-                gap: 0.25rem;
-                margin: 0;
-                min-width: max-content;
-                padding: 0.2rem 0 0;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label {
-                background: var(--global-accent, #00352f);
-                border: 1px solid var(--global-accent-border, #0f766e);
-                border-bottom: none;
-                border-radius: 8px 8px 0 0;
-                color: #ffffff;
-                min-height: 2.5rem;
-                padding: 0.55rem 1rem;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:hover {
-                background: var(--global-accent-hover, #004d44);
-                color: #ffffff;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) {
-                background: var(--global-surface, #b7c0dd);
-                border-color: var(--global-border, #b7c0dd);
-                box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.18);
-                color: var(--global-text, #001f1c) !important;
-                font-weight: 700;
-                position: relative;
-                top: 1px;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label:has(input:checked) p {
-                color: var(--global-text, #001f1c) !important;
-                font-weight: 700;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] label > div:first-child {
-                display: none;
-            }
-
-            .st-key-create_graph_header_bar div[role="radiogroup"][aria-label="Visualizacao"] p {
-                font-size: 0.92rem;
-                margin: 0;
-                white-space: nowrap;
-            }
-
-            .st-key-create_graph_header_bar .stButton > button {
-                min-height: 2.65rem;
-                margin-bottom: 0.15rem;
-            }
-
-            @media (max-width: 1100px) {
-                .st-key-create_graph_header_bar {
-                    margin: -5.65rem 8.75rem 0.85rem -1rem;
-                }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    return st.radio(
-        "Visualizacao",
-        options,
-        index=0,
-        horizontal=True,
-        key="create_graph_subpage",
-    )
-
-
 def _norm_key(value: object) -> str:
     s = str(value).strip().lower()
     s = unicodedata.normalize("NFKD", s)
@@ -1234,7 +960,7 @@ if subpage == "Operacional":
         margin=dict(b=bottom_margin, t=60, l=60, r=60),
     )
     fig.update_xaxes(automargin=True)
-    apply_graph_theme(fig)
+
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1407,7 +1133,7 @@ if subpage == "Operacional":
                         margin=dict(b=vi_bottom_margin, t=60, l=60, r=60),
                     )
                     fig_vi.update_xaxes(automargin=True)
-                    apply_graph_theme(fig_vi)
+                    
 
                     st.plotly_chart(fig_vi, use_container_width=True)
 
@@ -1522,7 +1248,7 @@ if subpage == "Operacional":
     if any(s.axis == "y2" for s in acc_series):
         fig.update_yaxes(title_text="Volume Infiltrado (m3)", secondary_y=True)
 
-    apply_graph_theme(fig)
+  
     st.plotly_chart(fig, use_container_width=True)
 elif subpage == "Visualizacao aprofundada":
     st.subheader("Visualizacao aprofundada")
@@ -2220,8 +1946,6 @@ elif subpage == "Visualizacao aprofundada":
         fig2.update_yaxes(title_text="NA (m)", secondary_y=False, autorange="reversed")
         fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-        apply_graph_theme(fig2)
-        st.plotly_chart(fig2, use_container_width=True)
     else:
         na_color_map = {p: na_palette[i % len(na_palette)] for i, p in enumerate(selected_points)}
         vb_color_map = {p: vb_palette[i % len(vb_palette)] for i, p in enumerate(selected_points)}
@@ -2459,8 +2183,7 @@ elif subpage == "Visualizacao aprofundada":
         if any(s.axis == "y2" for s in series):
             fig2.update_yaxes(title_text="Volume Bombeado (m3)", secondary_y=True)
 
-        apply_graph_theme(fig2)
-        st.plotly_chart(fig2, use_container_width=True)
+    
 elif subpage == "In situ aprofundado":
     st.subheader("In situ aprofundado")
 
@@ -2596,8 +2319,7 @@ elif subpage == "In situ aprofundado":
     fig_ap.update_yaxes(title_text=param1, secondary_y=False)
     if any(s.axis == "y2" for s in series):
         fig_ap.update_yaxes(title_text=param2, secondary_y=True)
-    apply_graph_theme(fig_ap)
-    st.plotly_chart(fig_ap, use_container_width=True)
+
 
     with st.expander("Tabela detalhada", expanded=False):
         st.dataframe(
@@ -2791,9 +2513,7 @@ elif subpage == "Laboratorial":
             font=dict(size=11),
         ),
     )
-    apply_graph_theme(fig_lab)
-    st.plotly_chart(fig_lab, use_container_width=True)
-
+    
     with st.expander("Tabela laboratorial", expanded=False):
         cols_view = [
             "data_coleta",
@@ -2901,8 +2621,7 @@ elif subpage == "In situ":
             limit_points=200000,
         )
         fig3.update_yaxes(title_text=selected_param, secondary_y=False)
-        apply_graph_theme(fig3)
-        st.plotly_chart(fig3, use_container_width=True)
+   
 
     elif "Ponto" in data_source.columns:
         selected_params_list = st.multiselect(
@@ -2980,8 +2699,7 @@ elif subpage == "In situ":
             show_range_slider=False,
             limit_points=200000,
         )
-        apply_graph_theme(fig3)
-        st.plotly_chart(fig3, use_container_width=True)
+        
 
     else:
         selected_param = st.selectbox("Parametro", params)
@@ -3024,5 +2742,4 @@ elif subpage == "In situ":
             limit_points=200000,
         )
         fig3.update_yaxes(title_text=selected_param, secondary_y=False)
-        apply_graph_theme(fig3)
-        st.plotly_chart(fig3, use_container_width=True)
+        
